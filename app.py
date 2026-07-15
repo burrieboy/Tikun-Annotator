@@ -115,7 +115,6 @@ def flag_fillers_in_line_chars(chars):
     Analyzes a list of character dicts for a line, finds contiguous runs of 
     characters consisting entirely of the filler letters {א, ש, ר, י},
     and flags them as non-biblical (is_biblical = False) if they meet the filler criteria.
-    This works perfectly on reversed/visual Hebrew storage!
     """
     filler_letters = {'א', 'ש', 'ר', 'י'}
     n = len(chars)
@@ -123,9 +122,8 @@ def flag_fillers_in_line_chars(chars):
     while i < n:
         c_text = chars[i]["c"]
         base = strip_nikud(c_text).strip()
-        base_clean = re.sub(r'[^\u05d0-\u05ea]', '', base) # Extract pure Hebrew letter
+        base_clean = re.sub(r'[^\u05d0-\u05ea]', '', base)
         
-        # If this character is a potential filler letter
         if base_clean and all(char in filler_letters for char in base_clean):
             start = i
             while i < n:
@@ -133,17 +131,14 @@ def flag_fillers_in_line_chars(chars):
                 next_base = strip_nikud(next_c_text).strip()
                 next_base_clean = re.sub(r'[^\u05d0-\u05ea]', '', next_base)
                 
-                # If we hit a Hebrew character that is NOT part of the filler set, break the run
                 if next_base_clean and any(char not in filler_letters for char in next_base_clean):
                     break
                 i += 1
             end = i
             
-            # Construct the clean run text
             run_chars = [chars[j] for j in range(start, end) if chars[j]["c"].strip()]
             run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run_chars])
             
-            # If the filler sequence is long enough, or is explicitly one of the Ashrei variants
             is_run_filler = False
             if len(run_text) >= 5:
                 is_run_filler = True
@@ -319,20 +314,15 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if not printable_chars:
                 continue
             
-            # 1. Initialize is_biblical to True for all characters by default
             for c in printable_chars:
                 c["is_biblical"] = True
                 
-            # 2. Run our robust, visual-order-aware filler-tagger on raw character level
             flag_fillers_in_line_chars(printable_chars)
-            
-            # Sort printable_chars by physical X coordinate (left to right)
             printable_chars.sort(key=lambda c: c["bbox"][0])
             
-            # 3. Separate biblical (real text) and physical (all text) characters
             biblical_chars = [c for c in printable_chars if c.get("is_biblical", True)]
             
-            # 4. Word Clustering for BIBLICAL words (ignores fillers entirely)
+            # Word Clustering for BIBLICAL words
             biblical_word_clusters = []
             current_cluster = []
             for char_obj in biblical_chars:
@@ -354,12 +344,12 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 
             biblical_words = []
             for cluster in biblical_word_clusters:
-                cluster.sort(key=lambda c: c["bbox"][0], reverse=True) # Sort RTL for word structure
+                cluster.sort(key=lambda c: c["bbox"][0], reverse=True) 
                 word_text = "".join([c["c"] for c in cluster])
                 if word_text.strip():
                     biblical_words.append(word_text)
                     
-            # 5. Word Clustering for PHYSICAL words (includes fillers)
+            # Word Clustering for PHYSICAL words
             physical_word_clusters = []
             current_cluster = []
             for char_obj in printable_chars:
@@ -381,12 +371,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 
             physical_words = []
             for cluster in physical_word_clusters:
-                cluster.sort(key=lambda c: c["bbox"][0], reverse=True) # Sort RTL
+                cluster.sort(key=lambda c: c["bbox"][0], reverse=True) 
                 word_text = "".join([c["c"] for c in cluster])
                 if word_text.strip():
                     physical_words.append(word_text)
             
-            # 6. Clean strings from leading numbers, symbols, and non-Hebrew markers
             cleaned_biblical_words = []
             for w in biblical_words:
                 w_clean = re.sub(r'^\d+\s*', '', w).strip()
@@ -394,8 +383,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if w_clean:
                     cleaned_biblical_words.append(w_clean)
             
-            # Since clusters were built LTR, we reverse this list to represent true RTL reading order.
-            # This makes index 0 the rightmost/first word of the biblical text!
             cleaned_biblical_words_rtl = list(reversed(cleaned_biblical_words))
             cleaned_biblical = " ".join(cleaned_biblical_words_rtl)
             
@@ -408,24 +395,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             cleaned_physical_words_rtl = list(reversed(cleaned_physical_words))
             cleaned_physical = " ".join(cleaned_physical_words_rtl)
             
-            # ==========================================
-            # TEMPORARY DEBUG PRINT
-            # ==========================================
-            if "חטאתיך" in cleaned_physical or "יהוה" in cleaned_physical or "הוהי" in cleaned_physical:
-                st.write(f"🔍 **Debug Parser Saw:** `{cleaned_physical}`")
-            # ==========================================
-            
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
-
-            # ==========================================
-            # DIAGNOSTIC 2.0: Match character to width
-            # ==========================================
-            if "יהוה" in cleaned_physical:
-                yhwh_chars = [c for c in biblical_chars if c["c"] in ['י', 'ה', 'ו']]
-                char_width_pairs = [(c["c"], round(c["bbox"][2] - c["bbox"][0], 2)) for c in yhwh_chars]
-                st.write(f"📊 **Letter Widths:** {char_width_pairs}")
-            # ==========================================
             
             if len(cleaned_biblical) == 0:
                 continue
@@ -433,7 +404,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if len(cleaned_physical.split()) < 2:
                 continue
             
-            # Extract line numbers from physical coordinates
             combined_chars = list(printable_chars)
             inline_num_rect = None
             inline_num_str = ""
@@ -450,13 +420,12 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                         else:
                             inline_num_rect.include_rect(char_obj["bbox"])
             
-            # Force everything non-Hebrew to be non-biblical
             for char_obj in combined_chars:
                 if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
                     char_obj["is_biblical"] = False
             
             # =========================================================================
-            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION (WITH HASHEM GAP CORRECTION)
+            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION
             # =========================================================================
             local_widths = [c["bbox"][2] - c["bbox"][0] for c in biblical_chars if (c["bbox"][2] - c["bbox"][0]) > 1]
             if local_widths:
@@ -464,11 +433,9 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             else:
                 avg_char_width = 10.0
                 
-            # Filter printable_chars for those that are actually Hebrew
             hebrew_printable_chars = [c for c in combined_chars if any('\u0590' <= char <= '\u05fe' for char in c["c"])]
             hebrew_biblical_chars = [c for c in hebrew_printable_chars if c.get("is_biblical", True)]
             
-            # 1. Identify "יהוה" (Hashem) clusters in the biblical words
             hashem_clusters = []
             for cluster in biblical_word_clusters:
                 word_text = "".join([c["c"] for c in sorted(cluster, key=lambda c: c["bbox"][0], reverse=True)])
@@ -476,16 +443,12 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if clean_word == "יהוה":
                     hashem_clusters.append(cluster)
             
-            # 2. Exclude Hashem characters from the base count (we will calculate them physically)
             hashem_char_ids = {id(c) for cluster in hashem_clusters for c in cluster}
             non_hashem_biblical_chars = [c for c in hebrew_biblical_chars if id(c) not in hashem_char_ids]
             
-            # Start effective_char_count with standard non-Hashem biblical characters
             effective_char_count = len(non_hashem_biblical_chars)
             
-            # 3. Add Hashem words using physical width and adjacent typesetting padding
             if hashem_clusters and biblical_word_clusters:
-                # Sort all biblical clusters physically from left to right to measure spaces accurately
                 sorted_biblical_clusters = sorted(biblical_word_clusters, key=lambda cl: min(c["bbox"][0] for c in cl))
                 
                 for cluster in hashem_clusters:
@@ -494,13 +457,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                         c_min = min(c_xs)
                         c_max = max(c_xs)
                         
-                        # Find where this cluster sits in physical order
                         try:
                             idx = sorted_biblical_clusters.index(cluster)
                         except ValueError:
                             idx = -1
                             
-                        # Measure left gap to previous word
                         left_gap = 0.0
                         if idx > 0:
                             prev_cluster = sorted_biblical_clusters[idx - 1]
@@ -508,7 +469,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                             if prev_xs:
                                 left_gap = c_min - max(prev_xs)
                                 
-                        # Measure right gap to next word
                         right_gap = 0.0
                         if idx != -1 and idx < len(sorted_biblical_clusters) - 1:
                             next_cluster = sorted_biblical_clusters[idx + 1]
@@ -516,15 +476,12 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                             if next_xs:
                                 right_gap = min(next_xs) - c_max
                                 
-                        # Standard typographic spacing threshold (~35% of font size)
                         font_size = cluster[0].get("size", 12)
                         std_space = font_size * 0.35
                         
-                        # Compute excess padding introduced by the black box
                         excess_left = max(0.0, left_gap - std_space) if left_gap > std_space else 0.0
                         excess_right = max(0.0, right_gap - std_space) if right_gap > std_space else 0.0
                         
-                        # The word's total physical space footprint on the line
                         total_footprint = (c_max - c_min) + excess_left + excess_right
                         equivalent_chars = total_footprint / avg_char_width
                         
@@ -532,10 +489,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     else:
                         effective_char_count += 4.0
             else:
-                # Fallback if no hashem found or no clusters
                 effective_char_count += 4.0 * len(hashem_clusters)
                 
-            # 4. Group contiguous Hebrew filler runs (e.g. overstruck Ashrei)
             filler_runs = []
             current_run = []
             for c in hebrew_printable_chars:
@@ -548,18 +503,16 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if current_run:
                 filler_runs.append(current_run)
                 
-            # Convert physical width of filler runs to "equivalent standard characters"
             for run in filler_runs:
                 xs = [c["bbox"][0] for c in run] + [c["bbox"][2] for c in run]
                 if xs:
                     run_width = max(xs) - min(xs)
                     effective_char_count += run_width / avg_char_width
-            # =========================================================================
             
             valid_blocks.append({
                 "physical_text": cleaned_physical,
                 "biblical_text": cleaned_biblical,
-                "biblical_words_list": cleaned_biblical_words_rtl, # Perfectly ordered RTL
+                "biblical_words_list": cleaned_biblical_words_rtl, 
                 "chars": combined_chars,
                 "bbox": c_line["bbox"],
                 "inline_num_rect": inline_num_rect,
@@ -607,7 +560,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         CATCHWORD_COL_X = LINE_NUM_COL_X + NUM_TO_CATCH_GAP
         # =========================================================================
 
-        # Use the highly accurate effective char counts for calibration
         avg_chars = round(sum(b["effective_char_count"] for b in biblical_lines) / len(biblical_lines))
         prev_first_word = "—"
         
@@ -636,7 +588,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             baseline_y = line_center_y + 3
             
-            # Dynamic layout calculation based on effective character density
             score_val = avg_chars - effective_char_count
             score_val_rounded = round(score_val)
             if score_val_rounded > 0:
@@ -648,7 +599,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 
             catch_word = prev_first_word
             
-            # The list is now beautifully sorted RTL, so index 0 is always the actual first word!
             if biblical_words_list:
                 prev_first_word = biblical_words_list[0]
             else:
@@ -689,43 +639,50 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 )
             
             # =========================================================================
-            # PHYSICAL-COORDINATE SORTING FOR ARROWS
+            # TARGETING ONLY THE LEFTMOST (READING-ORDER LAST) STRETCHABLE LETTER
             # =========================================================================
             biblical_chars = [c for c in chars if c.get("is_biblical", True) and c["c"].strip()]
+            
+            # Sorted physically from left (low X) to right (high X). 
+            # In RTL Hebrew, the leftmost character is the end/last of the line.
             biblical_chars_sorted = sorted(biblical_chars, key=lambda c: c["bbox"][0])
             
+            target_char = None
             for char_obj in biblical_chars_sorted:
                 if char_obj["c"] in stretchable_letters:
-                    cx0, cy0, cx1, cy1 = char_obj["bbox"]
-                    char_center_x = (cx0 + cx1) / 2
-                    
-                    ARROW_DOWNWARD_SHIFT = 10.0 
-                    arrow_tip_y = cy0 + ARROW_DOWNWARD_SHIFT
-                    arrow_top_y = arrow_tip_y - 4.5
-                    
-                    # Vertical Line of the Arrow
-                    page.draw_line(
-                        fitz.Point(char_center_x, arrow_top_y), 
-                        fitz.Point(char_center_x, arrow_tip_y), 
-                        color=(0.8, 0.1, 0.1), 
-                        width=1
-                    )
-                    # Left wing of arrow head
-                    page.draw_line(
-                        fitz.Point(char_center_x - 1.2, arrow_tip_y - 1.5), 
-                        fitz.Point(char_center_x, arrow_tip_y),
-                        color=(0.8, 0.1, 0.1), 
-                        width=1
-                    )
-                    # Right wing of arrow head
-                    page.draw_line(
-                        fitz.Point(char_center_x + 1.2, arrow_tip_y - 1.5), 
-                        fitz.Point(char_center_x, arrow_tip_y),
-                        color=(0.8, 0.1, 0.1), 
-                        width=1
-                    )
+                    target_char = char_obj
+                    break  # Found the first (leftmost) stretchable character! Stop scanning.
+            
+            if target_char:
+                cx0, cy0, cx1, cy1 = target_char["bbox"]
+                char_center_x = (cx0 + cx1) / 2
+                
+                ARROW_DOWNWARD_SHIFT = 10.0 
+                arrow_tip_y = cy0 + ARROW_DOWNWARD_SHIFT
+                arrow_top_y = arrow_tip_y - 4.5
+                
+                # Vertical Line of the Arrow
+                page.draw_line(
+                    fitz.Point(char_center_x, arrow_top_y), 
+                    fitz.Point(char_center_x, arrow_tip_y), 
+                    color=(0.8, 0.1, 0.1), 
+                    width=1
+                )
+                # Left wing of arrow head
+                page.draw_line(
+                    fitz.Point(char_center_x - 1.2, arrow_tip_y - 1.5), 
+                    fitz.Point(char_center_x, arrow_tip_y),
+                    color=(0.8, 0.1, 0.1), 
+                    width=1
+                )
+                # Right wing of arrow head
+                page.draw_line(
+                    fitz.Point(char_center_x + 1.2, arrow_tip_y - 1.5), 
+                    fitz.Point(char_center_x, arrow_tip_y),
+                    color=(0.8, 0.1, 0.1), 
+                    width=1
+                )
 
-    # Save the modified document back to your Streamlit output buffer
     doc.save(output_buffer, garbage=3, deflate=True)
     doc.close()
 
@@ -745,7 +702,6 @@ def main():
     uploaded_file = st.file_uploader("Choose a Tikun PDF file to process", type=["pdf"])
 
     if uploaded_file is not None:
-        # Create an in-memory buffer to save the processed PDF output
         output_pdf_buffer = io.BytesIO()
         
         with st.spinner("Analyzing text layout and inserting custom Hebrew annotations..."):
@@ -753,7 +709,6 @@ def main():
                 generate_annotated_tikun_streamlit(uploaded_file, output_pdf_buffer)
                 st.success("Successfully processed and annotated PDF layout!")
                 
-                # Provide instant download functionality
                 st.download_button(
                     label="📥 Download Annotated PDF",
                     data=output_pdf_buffer.getvalue(),
