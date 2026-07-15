@@ -393,14 +393,20 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 w_clean = re.sub(r'[^\u05d0-\u05ea\u0590-\u05c7]', '', w_clean).strip()
                 if w_clean:
                     cleaned_biblical_words.append(w_clean)
-            cleaned_biblical = " ".join(cleaned_biblical_words)
+            
+            # Since clusters were built LTR, we reverse this list to represent true RTL reading order.
+            # This makes index 0 the rightmost/first word of the biblical text!
+            cleaned_biblical_words_rtl = list(reversed(cleaned_biblical_words))
+            cleaned_biblical = " ".join(cleaned_biblical_words_rtl)
             
             cleaned_physical_words = []
             for w in physical_words:
                 w_clean = re.sub(r'^\d+\s*', '', w).strip()
                 if w_clean:
                     cleaned_physical_words.append(w_clean)
-            cleaned_physical = " ".join(cleaned_physical_words)
+            
+            cleaned_physical_words_rtl = list(reversed(cleaned_physical_words))
+            cleaned_physical = " ".join(cleaned_physical_words_rtl)
             
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
@@ -433,14 +439,52 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
                     char_obj["is_biblical"] = False
             
+            # =========================================================================
+            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION
+            # =========================================================================
+            local_widths = [c["bbox"][2] - c["bbox"][0] for c in biblical_chars if (c["bbox"][2] - c["bbox"][0]) > 1]
+            if local_widths:
+                avg_char_width = sum(local_widths) / len(local_widths)
+            else:
+                avg_char_width = 10.0
+                
+            # Filter printable_chars for those that are actually Hebrew
+            hebrew_printable_chars = [c for c in combined_chars if any('\u0590' <= char <= '\u05fe' for char in c["c"])]
+            
+            # Initialize effective character density with standard biblical letters
+            hebrew_biblical_chars = [c for c in hebrew_printable_chars if c.get("is_biblical", True)]
+            effective_char_count = len(hebrew_biblical_chars)
+            
+            # Group contiguous Hebrew filler runs
+            filler_runs = []
+            current_run = []
+            for c in hebrew_printable_chars:
+                if not c.get("is_biblical", True):
+                    current_run.append(c)
+                else:
+                    if current_run:
+                        filler_runs.append(current_run)
+                        current_run = []
+            if current_run:
+                filler_runs.append(current_run)
+                
+            # Convert physical width of filler runs to "equivalent standard characters"
+            for run in filler_runs:
+                xs = [c["bbox"][0] for c in run] + [c["bbox"][2] for c in run]
+                if xs:
+                    run_width = max(xs) - min(xs)
+                    effective_char_count += run_width / avg_char_width
+            # =========================================================================
+            
             valid_blocks.append({
                 "physical_text": cleaned_physical,
                 "biblical_text": cleaned_biblical,
-                "biblical_words_list": cleaned_biblical_words, # Saved as list for perfect catchword extraction
+                "biblical_words_list": cleaned_biblical_words_rtl, # Perfectly ordered RTL
                 "chars": combined_chars,
                 "bbox": c_line["bbox"],
                 "inline_num_rect": inline_num_rect,
-                "inline_num_str": inline_num_str
+                "inline_num_str": inline_num_str,
+                "effective_char_count": effective_char_count
             })
         
         valid_blocks.sort(key=lambda b: b["bbox"][1])
@@ -483,8 +527,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         CATCHWORD_COL_X = LINE_NUM_COL_X + NUM_TO_CATCH_GAP
         # =========================================================================
 
-        # Calibrate using physical text lengths (avoids layout scoring bugs on filler words)
-        avg_chars = round(sum(len(b["physical_text"]) for b in biblical_lines) / len(biblical_lines))
+        # Use the highly accurate effective char counts for calibration
+        avg_chars = round(sum(b["effective_char_count"] for b in biblical_lines) / len(biblical_lines))
         prev_first_word = "—"
         
         for block in biblical_lines:
@@ -499,7 +543,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
         for i, block in enumerate(biblical_lines):
-            physical_text = block["physical_text"]
+            effective_char_count = block["effective_char_count"]
             biblical_text = block["biblical_text"]
             biblical_words_list = block["biblical_words_list"]
             chars = block["chars"]
@@ -512,18 +556,19 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             baseline_y = line_center_y + 3
             
-            # Precise scoring calculations (physical-based)
-            score_val = avg_chars - len(physical_text)
-            if score_val > 0:
-                score_str = f"ח{int_to_hebrew(score_val)}"
-            elif score_val < 0:
-                score_str = f"י{int_to_hebrew(abs(score_val))}"
+            # Dynamic layout calculation based on effective character density
+            score_val = avg_chars - effective_char_count
+            score_val_rounded = round(score_val)
+            if score_val_rounded > 0:
+                score_str = f"ח{int_to_hebrew(score_val_rounded)}"
+            elif score_val_rounded < 0:
+                score_str = f"י{int_to_hebrew(abs(score_val_rounded))}"
             else:
                 score_str = "שת"     
                 
             catch_word = prev_first_word
             
-            # Get the real biblical first word of the line
+            # The list is now beautifully sorted RTL, so index 0 is always the actual first word!
             if biblical_words_list:
                 prev_first_word = biblical_words_list[0]
             else:
