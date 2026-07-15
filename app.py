@@ -326,109 +326,81 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             # 2. Run our robust, visual-order-aware filler-tagger on raw character level
             flag_fillers_in_line_chars(printable_chars)
             
+            # Sort printable_chars by physical X coordinate (left to right)
             printable_chars.sort(key=lambda c: c["bbox"][0])
             
-            # Word Clustering
-            word_clusters = []
-            current_cluster = []
+            # 3. Separate biblical (real text) and physical (all text) characters
+            biblical_chars = [c for c in printable_chars if c.get("is_biblical", True)]
             
+            # 4. Word Clustering for BIBLICAL words (ignores fillers entirely)
+            biblical_word_clusters = []
+            current_cluster = []
+            for char_obj in biblical_chars:
+                if not current_cluster:
+                    current_cluster.append(char_obj)
+                else:
+                    prev_char = current_cluster[-1]
+                    gap = char_obj["bbox"][0] - prev_char["bbox"][2]
+                    font_size = char_obj.get("size", 12)
+                    gap_threshold = max(3.5, font_size * 0.24)
+                    
+                    if gap > gap_threshold:
+                        biblical_word_clusters.append(current_cluster)
+                        current_cluster = [char_obj]
+                    else:
+                        current_cluster.append(char_obj)
+            if current_cluster:
+                biblical_word_clusters.append(current_cluster)
+                
+            biblical_words = []
+            for cluster in biblical_word_clusters:
+                cluster.sort(key=lambda c: c["bbox"][0], reverse=True) # Sort RTL for word structure
+                word_text = "".join([c["c"] for c in cluster])
+                if word_text.strip():
+                    biblical_words.append(word_text)
+                    
+            # 5. Word Clustering for PHYSICAL words (includes fillers)
+            physical_word_clusters = []
+            current_cluster = []
             for char_obj in printable_chars:
                 if not current_cluster:
                     current_cluster.append(char_obj)
                 else:
                     prev_char = current_cluster[-1]
                     gap = char_obj["bbox"][0] - prev_char["bbox"][2]
-                    
                     font_size = char_obj.get("size", 12)
                     gap_threshold = max(3.5, font_size * 0.24)
                     
                     if gap > gap_threshold:
-                        word_clusters.append(current_cluster)
+                        physical_word_clusters.append(current_cluster)
                         current_cluster = [char_obj]
                     else:
                         current_cluster.append(char_obj)
             if current_cluster:
-                word_clusters.append(current_cluster)
+                physical_word_clusters.append(current_cluster)
                 
-            processed_words = []
-            for cluster in word_clusters:
-                cluster.sort(key=lambda c: c["bbox"][0], reverse=True)
+            physical_words = []
+            for cluster in physical_word_clusters:
+                cluster.sort(key=lambda c: c["bbox"][0], reverse=True) # Sort RTL
                 word_text = "".join([c["c"] for c in cluster])
-                
-                # Separate the biblical (real) and filler text parts of this word
-                biblical_word_chars = [c for c in cluster if c.get("is_biblical", True)]
-                biblical_word_text = "".join([c["c"] for c in biblical_word_chars]).strip()
-                
-                wx0 = min(c["bbox"][0] for c in cluster)
-                wy0 = min(c["bbox"][1] for c in cluster)
-                wx1 = max(c["bbox"][2] for c in cluster)
-                wy1 = max(c["bbox"][3] for c in cluster)
-                
-                processed_words.append({
-                    "text": word_text,
-                    "biblical_text": biblical_word_text,
-                    "chars": cluster,
-                    "bbox": (wx0, wy0, wx1, wy1),
-                    "is_filler": len(biblical_word_text) == 0
-                })
-                
-            processed_words.sort(key=lambda w: w["bbox"][2], reverse=True)
+                if word_text.strip():
+                    physical_words.append(word_text)
             
-            combined_text = ""
-            combined_chars = []
+            # 6. Clean strings from leading numbers, symbols, and non-Hebrew markers
+            cleaned_biblical_words = []
+            for w in biblical_words:
+                w_clean = re.sub(r'^\d+\s*', '', w).strip()
+                w_clean = re.sub(r'[^\u05d0-\u05ea\u0590-\u05c7]', '', w_clean).strip()
+                if w_clean:
+                    cleaned_biblical_words.append(w_clean)
+            cleaned_biblical = " ".join(cleaned_biblical_words)
             
-            for idx, w in enumerate(processed_words):
-                combined_text += w["text"]
-                combined_chars.extend(w["chars"])
-                
-                if idx < len(processed_words) - 1:
-                    combined_text += " "
-                    next_word = processed_words[idx + 1]
-                    dummy_space = {
-                        "c": " ",
-                        "bbox": (next_word["bbox"][2], w["bbox"][1], w["bbox"][0], w["bbox"][3]),
-                        "size": w["chars"][0].get("size", 12),
-                        "font": w["chars"][0].get("font", ""),
-                        "is_biblical": False
-                    }
-                    combined_chars.append(dummy_space)
-            
-            # Extract line numbers
-            inline_num_rect = None
-            inline_num_str = ""
-            
-            digit_match = re.match(r'^(\s*)(\d+)(\s*)', combined_text)
-            if digit_match:
-                inline_num_str = digit_match.group(2)
-                for idx in range(digit_match.start(0), digit_match.end(0)):
-                    if idx < len(combined_chars):
-                        combined_chars[idx]["is_biblical"] = False
-                    
-                bboxes = []
-                for idx in range(digit_match.start(2), digit_match.end(2)):
-                    if idx < len(combined_chars):
-                        bboxes.append(fitz.Rect(combined_chars[idx]["bbox"]))
-                if bboxes:
-                    inline_num_rect = bboxes[0]
-                    for bbox in bboxes[1:]:
-                        inline_num_rect.include_rect(bbox)
-            
-            # Force everything non-Hebrew (like numbers or brackets) to be non-biblical
-            for char_obj in combined_chars:
-                if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
-                    char_obj["is_biblical"] = False
-            
-            # Reconstruct pristine biblical text completely free of fillers
-            biblical_words = [w["biblical_text"] for w in processed_words if w["biblical_text"]]
-            raw_biblical_text = " ".join(biblical_words)
-            cleaned_biblical = re.sub(r'^\d+\s*', '', raw_biblical_text).strip()
-            cleaned_biblical = re.sub(r'\s+', ' ', cleaned_biblical).strip()
-            
-            # Reconstruct general physical text
-            physical_words = [w["text"] for w in processed_words]
-            raw_physical_text = " ".join(physical_words)
-            cleaned_physical = re.sub(r'^\d+\s*', '', raw_physical_text).strip()
-            cleaned_physical = re.sub(r'\s+', ' ', cleaned_physical).strip()
+            cleaned_physical_words = []
+            for w in physical_words:
+                w_clean = re.sub(r'^\d+\s*', '', w).strip()
+                if w_clean:
+                    cleaned_physical_words.append(w_clean)
+            cleaned_physical = " ".join(cleaned_physical_words)
             
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
@@ -438,10 +410,33 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 
             if len(cleaned_physical.split()) < 2:
                 continue
-                
+            
+            # Extract line numbers from physical coordinates
+            combined_chars = list(printable_chars)
+            inline_num_rect = None
+            inline_num_str = ""
+            
+            combined_text = " ".join(physical_words)
+            digit_match = re.match(r'^(\s*)(\d+)(\s*)', combined_text)
+            if digit_match:
+                inline_num_str = digit_match.group(2)
+                for char_obj in combined_chars:
+                    if char_obj["c"].isdigit():
+                        char_obj["is_biblical"] = False
+                        if inline_num_rect is None:
+                            inline_num_rect = fitz.Rect(char_obj["bbox"])
+                        else:
+                            inline_num_rect.include_rect(char_obj["bbox"])
+            
+            # Force everything non-Hebrew to be non-biblical
+            for char_obj in combined_chars:
+                if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
+                    char_obj["is_biblical"] = False
+            
             valid_blocks.append({
                 "physical_text": cleaned_physical,
                 "biblical_text": cleaned_biblical,
+                "biblical_words_list": cleaned_biblical_words, # Saved as list for perfect catchword extraction
                 "chars": combined_chars,
                 "bbox": c_line["bbox"],
                 "inline_num_rect": inline_num_rect,
@@ -488,8 +483,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         CATCHWORD_COL_X = LINE_NUM_COL_X + NUM_TO_CATCH_GAP
         # =========================================================================
 
-        # Calibrate using pure biblical lengths
-        avg_chars = round(sum(len(b["biblical_text"]) for b in biblical_lines) / len(biblical_lines))
+        # Calibrate using physical text lengths (avoids layout scoring bugs on filler words)
+        avg_chars = round(sum(len(b["physical_text"]) for b in biblical_lines) / len(biblical_lines))
         prev_first_word = "—"
         
         for block in biblical_lines:
@@ -506,6 +501,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         for i, block in enumerate(biblical_lines):
             physical_text = block["physical_text"]
             biblical_text = block["biblical_text"]
+            biblical_words_list = block["biblical_words_list"]
             chars = block["chars"]
             x0, y0, x1, y1 = block["bbox"]
             line_center_y = (y0 + y1) / 2
@@ -516,8 +512,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             baseline_y = line_center_y + 3
             
-            # Precise scoring calculations
-            score_val = avg_chars - len(biblical_text)
+            # Precise scoring calculations (physical-based)
+            score_val = avg_chars - len(physical_text)
             if score_val > 0:
                 score_str = f"ח{int_to_hebrew(score_val)}"
             elif score_val < 0:
@@ -525,11 +521,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             else:
                 score_str = "שת"     
                 
-            words = biblical_text.split()
             catch_word = prev_first_word
             
-            if words:
-                prev_first_word = words[0]
+            # Get the real biblical first word of the line
+            if biblical_words_list:
+                prev_first_word = biblical_words_list[0]
             else:
                 prev_first_word = "—"
             
