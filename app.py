@@ -407,7 +407,17 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             cleaned_physical_words_rtl = list(reversed(cleaned_physical_words))
             cleaned_physical = " ".join(cleaned_physical_words_rtl)
+            cleaned_physical_words_rtl = list(reversed(cleaned_physical_words))
+            cleaned_physical = " ".join(cleaned_physical_words_rtl)
             
+            # ==========================================
+            # TEMPORARY DEBUG PRINT (Paste this here!)
+            # ==========================================
+            if "חטאתיך" in cleaned_physical or "יהוה" in cleaned_physical or "הוהי" in cleaned_physical:
+                st.write(f"🔍 **Debug Parser Saw:** `{cleaned_physical}`")
+            # ==========================================
+            
+           
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
                 
