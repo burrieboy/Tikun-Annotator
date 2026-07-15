@@ -80,9 +80,14 @@ NUMBER_COLOR        = (0, 0, 0)
 stretchable_letters = {'ד', 'ר', 'ק', 'ת', 'ל', 'ה'}
 
 # =========================================================================
-# DYNAMIC HEBREW GEMATRIA CONVERTER (Handles 1-59, with 15/16 exceptions)
+# UTILITY FUNCTIONS (Gematria, Vowel Stripper, RTL Fix)
 # =========================================================================
+def strip_nikud(text):
+    """Removes all Hebrew vowels (nikud) and cantillation marks (taamim)."""
+    return re.sub(r'[\u0591-\u05c7]', '', text)
+
 def int_to_hebrew(n):
+    """Converts an integer to Hebrew Gematria (1-59) with standard exceptions."""
     if n <= 0:
         return ""
     if n == 15:
@@ -94,11 +99,9 @@ def int_to_hebrew(n):
     ones = {1: 'א', 2: 'ב', 3: 'ג', 4: 'ד', 5: 'ה', 6: 'ו', 7: 'ז', 8: 'ח', 9: 'ט'}
     
     result = ""
-    # Add tens digit
     t_val = (n // 10) * 10
     if t_val in tens:
         result += tens[t_val]
-    # Add ones digit
     o_val = n % 10
     if o_val in ones:
         result += ones[o_val]
@@ -114,9 +117,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     total_pages = len(doc)
     
-    # =========================================================================
-    # STEP 1: BUCKETED GLOBAL CALIBRATION
-    # =========================================================================
+    # Global calibration
     bucketed_sizes = {}
     pages_to_scan = min(20, total_pages)
     
@@ -140,9 +141,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
     min_size_limit = dominant_bucket - 1.2
     max_size_limit = dominant_bucket + 1.8
 
-    # =========================================================================
-    # STEP 2: PROCESS PAGES
-    # =========================================================================
     for page_num in range(total_pages):
         page = doc[page_num]
         page.insert_font(fontname="alef", fontfile=font_file)
@@ -156,9 +154,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         top_limit    = page_height * TOP_CROP_PERCENT   
         bottom_limit = page_height * (1.0 - BOTTOM_CROP_PERCENT)   
 
-        # ---------------------------------------------------------------------
-        # DYNAMIC HEADER BOUNDARY DETECTION
-        # ---------------------------------------------------------------------
+        # Dynamic header boundary detection
         header_y_boundary = None
         for block in page_data.get("blocks", []):
             if "lines" in block:
@@ -182,7 +178,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         redactions_to_apply = []
         digit_spans = []
         
-        # Gather independent digit/number spans
         for block in page_data.get("blocks", []):
             if "lines" in block:
                 for line in block["lines"]:
@@ -199,9 +194,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                                     "center_y": (s_y0 + s_y1) / 2
                                 })
         
-        # ---------------------------------------------------------------------
-        # DETECT AND CONSOLIDATE SPLIT HORIZONTAL LINES
-        # ---------------------------------------------------------------------
+        # Detect and consolidate lines
         raw_lines = []
         for block in page_data.get("blocks", []):
             if "lines" in block:
@@ -243,7 +236,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                         "x0": x0
                     })
         
-        # Group lines with vertical centers within 6px of each other
         consolidated_lines = []
         raw_lines.sort(key=lambda l: l["center_y"])
         
@@ -270,7 +262,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     "center_y": r_line["center_y"]
                 })
         
-        # Process and clean consolidated rows
         valid_blocks = []
         for c_line in consolidated_lines:
             all_chars = []
@@ -282,10 +273,9 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if not printable_chars:
                 continue
                 
-            # Sort printable characters LTR by x0 coordinate
             printable_chars.sort(key=lambda c: c["bbox"][0])
             
-            # Group characters into physical "word clusters" based on visual gaps
+            # Word Clustering
             word_clusters = []
             current_cluster = []
             
@@ -307,7 +297,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if current_cluster:
                 word_clusters.append(current_cluster)
                 
-            # Sort characters inside each cluster RTL (descending x0)
             processed_words = []
             for cluster in word_clusters:
                 cluster.sort(key=lambda c: c["bbox"][0], reverse=True)
@@ -318,13 +307,18 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 wx1 = max(c["bbox"][2] for c in cluster)
                 wy1 = max(c["bbox"][3] for c in cluster)
                 
+                # Check for "Ashrei" filler with complete Nikud immunity
+                normalized = strip_nikud(word_text).strip()
+                normalized_clean = re.sub(r'[^\u05d0-\u05ea]', '', normalized) # Only Hebrew letters
+                is_filler = "אשרי" in normalized_clean
+                
                 processed_words.append({
                     "text": word_text,
                     "chars": cluster,
-                    "bbox": (wx0, wy0, wx1, wy1)
+                    "bbox": (wx0, wy0, wx1, wy1),
+                    "is_filler": is_filler
                 })
                 
-            # Sort the completed words RTL (descending by right edge x1)
             processed_words.sort(key=lambda w: w["bbox"][2], reverse=True)
             
             combined_text = ""
@@ -332,6 +326,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             for idx, w in enumerate(processed_words):
                 combined_text += w["text"]
+                
+                # Tag characters inside this word as non-biblical if it is a filler word
+                for char_obj in w["chars"]:
+                    char_obj["is_biblical"] = not w["is_filler"]
+                    
                 combined_chars.extend(w["chars"])
                 
                 if idx < len(processed_words) - 1:
@@ -341,20 +340,21 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                         "c": " ",
                         "bbox": (next_word["bbox"][2], w["bbox"][1], w["bbox"][0], w["bbox"][3]),
                         "size": w["chars"][0].get("size", 12),
-                        "font": w["chars"][0].get("font", "")
+                        "font": w["chars"][0].get("font", ""),
+                        "is_biblical": False
                     }
                     combined_chars.append(dummy_space)
             
-            raw_cleaned = combined_text.strip()
-            ignore_indices = set()
+            # Extract line numbers
             inline_num_rect = None
             inline_num_str = ""
             
             digit_match = re.match(r'^(\s*)(\d+)(\s*)', combined_text)
             if digit_match:
                 inline_num_str = digit_match.group(2)
-                for idx in range(digit_match.start(1), digit_match.end(3)):
-                    ignore_indices.add(idx)
+                for idx in range(digit_match.start(0), digit_match.end(0)):
+                    if idx < len(combined_chars):
+                        combined_chars[idx]["is_biblical"] = False
                     
                 bboxes = []
                 for idx in range(digit_match.start(2), digit_match.end(2)):
@@ -365,16 +365,22 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     for bbox in bboxes[1:]:
                         inline_num_rect.include_rect(bbox)
             
-            for match in re.finditer(r'(אשרי\s*){2,}', combined_text):
-                for idx in range(match.start(), match.end()):
-                    ignore_indices.add(idx)
-                    
-            for idx, char_obj in enumerate(combined_chars):
-                char_obj["is_biblical"] = (idx not in ignore_indices)
+            # Force everything non-Hebrew (like numbers or brackets) to be non-biblical
+            for char_obj in combined_chars:
+                if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
+                    char_obj["is_biblical"] = False
             
-            cleaned_physical = re.sub(r'^\d+\s*', '', raw_cleaned).strip()
-            cleaned_biblical = re.sub(r'(אשרי\s*){2,}', ' ', cleaned_physical)
+            # Reconstruct pristine biblical text completely free of fillers
+            biblical_words = [w["text"] for w in processed_words if not w["is_filler"]]
+            raw_biblical_text = " ".join(biblical_words)
+            cleaned_biblical = re.sub(r'^\d+\s*', '', raw_biblical_text).strip()
             cleaned_biblical = re.sub(r'\s+', ' ', cleaned_biblical).strip()
+            
+            # Reconstruct general physical text
+            physical_words = [w["text"] for w in processed_words]
+            raw_physical_text = " ".join(physical_words)
+            cleaned_physical = re.sub(r'^\d+\s*', '', raw_physical_text).strip()
+            cleaned_physical = re.sub(r'\s+', ' ', cleaned_physical).strip()
             
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
@@ -434,7 +440,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         CATCHWORD_COL_X = LINE_NUM_COL_X + NUM_TO_CATCH_GAP
         # =========================================================================
 
-        # CALIBRATE USING BIBLICAL TEXT (TRUNCATES FILLER WORDS TO FIND TRUE AVERAGE CONTENT LENGTH)
+        # Calibrate using pure biblical lengths
         avg_chars = round(sum(len(b["biblical_text"]) for b in biblical_lines) / len(biblical_lines))
         prev_first_word = "—"
         
@@ -462,7 +468,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             baseline_y = line_center_y + 3
             
-            # Score against the biblical text (excluding filler)
+            # Precise scoring calculations
             score_val = avg_chars - len(biblical_text)
             if score_val > 0:
                 score_str = f"ח{int_to_hebrew(score_val)}"
