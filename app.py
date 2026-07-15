@@ -544,8 +544,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
     for i, block in enumerate(biblical_lines):
-    # --- START OVERRIDE ---
-    raw_text = block["biblical_text"].replace(" ", "")
+        # --- START OVERRIDE ---
+        raw_text = block["biblical_text"].replace(" ", "")
     
         if "אשריאשריאשרי" in raw_text:
             # Force the character count to be very high for this specific line
