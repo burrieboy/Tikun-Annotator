@@ -5,21 +5,6 @@ import os
 import re
 import urllib.request
 
-# --- [PASTE YOUR EXACT FUNCTION HERE] ---
-# Run the program
-# Just paste the big function you provided earlier below this line.
-# IMPORTANT: Delete the last line "generate_annotated_tikun(...)" 
-# because we will call it from the button below.
-
-def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
-    # Use 'stream' to read the uploaded file directly from memory
-    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-    
-import fitz
-import re
-import urllib.request
-import os
-
 # =========================================================================
 # SELF-HEALING & ABSOLUTE FONT PATH RESOLUTION
 # =========================================================================
@@ -38,8 +23,10 @@ def is_valid_ttf(filepath):
         return False
 
 if os.path.exists(font_file) and not is_valid_ttf(font_file):
-    print(f"Warning: Detected corrupt font file. Re-downloading...")
-    os.remove(font_file)
+    try:
+        os.remove(font_file)
+    except Exception:
+        pass
 
 if not os.path.exists(font_file):
     urls = [
@@ -48,7 +35,6 @@ if not os.path.exists(font_file):
     ]
     success = False
     for url in urls:
-        print(f"Downloading Hebrew font (Alef) from: {url}")
         try:
             req = urllib.request.Request(
                 url, 
@@ -59,13 +45,14 @@ if not os.path.exists(font_file):
                 with open(font_file, 'wb') as out_file:
                     out_file.write(data)
             if is_valid_ttf(font_file):
-                print(f"Font download verified.")
                 success = True
                 break
         except Exception as e:
-            print(f"Failed to download from {url}: {e}")
             if os.path.exists(font_file):
-                os.remove(font_file)
+                try:
+                    os.remove(font_file)
+                except Exception:
+                    pass
     if not success:
         raise RuntimeError("Could not obtain a Hebrew font.")
 
@@ -96,15 +83,17 @@ stretchable_letters = {'ד', 'ר', 'ק', 'ת', 'ל', 'ה'}
 def fix_rtl(text):
     return text[::-1]
 
-def generate_annotated_tikun(input_pdf, output_pdf):
-    doc = fitz.open(input_pdf)
+# =========================================================================
+# THE MAIN PROCESSING FUNCTION
+# =========================================================================
+def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
+    # Open PDF directly from the Streamlit file upload stream in memory
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     total_pages = len(doc)
-    print(f"Loaded PDF with {total_pages} pages.")
     
     # =========================================================================
     # STEP 1: BUCKETED GLOBAL CALIBRATION
     # =========================================================================
-    print("Scanning document to calibrate font sizes...")
     bucketed_sizes = {}
     pages_to_scan = min(20, total_pages)
     
@@ -245,8 +234,6 @@ def generate_annotated_tikun(input_pdf, output_pdf):
         valid_blocks.sort(key=lambda b: b["bbox"][1])
         biblical_lines = valid_blocks
         
-        print(f"Page {page_num + 1}/{total_pages}: Processing {len(biblical_lines)} lines.")
-        
         if not biblical_lines:
             continue
             
@@ -364,16 +351,9 @@ def generate_annotated_tikun(input_pdf, output_pdf):
             # =========================================================================
             # PHYSICAL-COORDINATE SORTING FOR ARROWS
             # =========================================================================
-            # 1. Filter out non-biblical characters (like original line numbers)
             biblical_chars = [c for c in chars if c.get("is_biblical", True) and c["c"].strip()]
-            
-            # 2. Sort characters by physical X coordinate (ascending order: left to right).
-            # In RTL Hebrew, the END of the line is on the LEFT (lowest x0 coordinate).
-            # Sorting ascending means the absolute final letters on the page are at the 
-            # beginning of this list.
             biblical_chars_sorted = sorted(biblical_chars, key=lambda c: c["bbox"][0])
             
-            # 3. Walk through the sorted characters starting from the end of the line (leftmost)
             for char_obj in biblical_chars_sorted:
                 if char_obj["c"] in stretchable_letters:
                     cx0, cy0, cx1, cy1 = char_obj["bbox"]
@@ -401,12 +381,11 @@ def generate_annotated_tikun(input_pdf, output_pdf):
                         color=(0.8, 0.1, 0.1), 
                         width=1
                     )
-                    break # Found the leftmost stretchable letter. Stop looking.
+                    break # Found leftmost, exit char loop
                     
-  # DO NOT use a filename string here
+    # Save the output directly to the stream buffer
     doc.save(output_buffer, garbage=4, deflate=True)
     doc.close()
-    print(f"\nSuccess! Your cleaned and fully annotated file '{output_pdf}' is ready.")
 
 # --- STREAMLIT UI ---
 st.title("Tikun Annotator")
@@ -418,11 +397,9 @@ if uploaded_file is not None:
             # Create a buffer in memory
             output_buffer = io.BytesIO()
             
-            # Run your logic
-            # IMPORTANT: Make sure inside this function, you use:
-            # doc.save(output_buffer, garbage=4, deflate=True)
-            # NOT: doc.save("annotated_tikun.pdf")
-            generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
+            with st.spinner("Processing... Please wait."):
+                # Run logic
+                generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
             
             # Rewind and Check
             output_buffer.seek(0)
