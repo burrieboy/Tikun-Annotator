@@ -64,7 +64,7 @@ SCORE_TO_NUM_GAP     = 15   # Distance between the Scores and the Line Numbers
 NUM_TO_CATCH_GAP     = 12   # Distance between the Line Numbers and the Catchwords
 
 # =========================================================================
-# MARGIN CROP CONFIGURATION
+# MARGIN CROP CONFIGURATION (Fallback Defaults)
 # =========================================================================
 TOP_CROP_PERCENT    = 0.11  
 BOTTOM_CROP_PERCENT = 0.06  
@@ -132,6 +132,34 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         right_limit  = page_width * (1.0 - RIGHT_CROP_PERCENT)    
         top_limit    = page_height * TOP_CROP_PERCENT   
         bottom_limit = page_height * (1.0 - BOTTOM_CROP_PERCENT)   
+
+        # ---------------------------------------------------------------------
+        # DYNAMIC HEADER BOUNDARY DETECTION
+        # ---------------------------------------------------------------------
+        # We look for "רוחב שורה" (or reversed "הרוש בחור") or a dotted/dashed separator line.
+        header_y_boundary = None
+        for block in page_data.get("blocks", []):
+            if "lines" in block:
+                for line in block["lines"]:
+                    line_text = ""
+                    for span in line["spans"]:
+                        if "chars" in span:
+                            line_text += "".join([c["c"] for c in span["chars"]])
+                    
+                    # Look for keywords or lines made of 5+ dots/dashes
+                    has_keyword = "רוחב שורה" in line_text or "הרוש בחור" in line_text
+                    has_dots = len(re.findall(r'[\.\-\_~*·•]{5,}', line_text)) > 0
+                    
+                    if has_keyword or has_dots:
+                        lx0, ly0, lx1, ly1 = line["bbox"]
+                        # We want to ignore everything above this line (plus a tiny safety gap)
+                        current_boundary = ly1 + 2  
+                        if header_y_boundary is None or current_boundary > header_y_boundary:
+                            header_y_boundary = current_boundary
+                            
+        # If we successfully detected a header, override the default top limit
+        page_top_limit = max(top_limit, header_y_boundary) if header_y_boundary is not None else top_limit
+        # ---------------------------------------------------------------------
         
         redactions_to_apply = []
         digit_spans = []
@@ -205,7 +233,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     center_x = (x0 + x1) / 2
                     center_y = (y0 + y1) / 2
                     
-                    if not (left_limit <= center_x <= right_limit) or not (top_limit <= center_y <= bottom_limit):
+                    # CRITICAL UPDATE: Using the dynamically detected page_top_limit here
+                    if not (left_limit <= center_x <= right_limit) or not (page_top_limit <= center_y <= bottom_limit):
                         continue
                         
                     total_chars = sum(count for _, count in line_sizes)
