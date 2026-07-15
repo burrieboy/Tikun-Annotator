@@ -15,7 +15,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
     # Use 'stream' to read the uploaded file directly from memory
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     
-   import fitz
+import fitz
 import re
 import urllib.request
 import os
