@@ -77,8 +77,32 @@ RIGHT_CROP_PERCENT  = 0.04
 NUMBER_FONT_SIZE    = 9         
 NUMBER_COLOR        = (0, 0, 0) 
 
-hebrew_numerals = {1: 'א', 2: 'ב', 3: 'ג', 4: 'ד', 5: 'ה', 6: 'ו', 7: 'ז', 8: 'ח', 9: 'ט'}
 stretchable_letters = {'ד', 'ר', 'ק', 'ת', 'ל', 'ה'}
+
+# =========================================================================
+# DYNAMIC HEBREW GEMATRIA CONVERTER (Handles 1-59, with 15/16 exceptions)
+# =========================================================================
+def int_to_hebrew(n):
+    if n <= 0:
+        return ""
+    if n == 15:
+        return "טו"
+    if n == 16:
+        return "טז"
+    
+    tens = {10: 'י', 20: 'כ', 30: 'ל', 40: 'מ', 50: 'נ'}
+    ones = {1: 'א', 2: 'ב', 3: 'ג', 4: 'ד', 5: 'ה', 6: 'ו', 7: 'ז', 8: 'ח', 9: 'ט'}
+    
+    result = ""
+    # Add tens digit
+    t_val = (n // 10) * 10
+    if t_val in tens:
+        result += tens[t_val]
+    # Add ones digit
+    o_val = n % 10
+    if o_val in ones:
+        result += ones[o_val]
+    return result
 
 def fix_rtl(text):
     return text[::-1]
@@ -249,21 +273,19 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         # Process and clean consolidated rows
         valid_blocks = []
         for c_line in consolidated_lines:
-            # 1. Gather all raw characters from this consolidated row
             all_chars = []
             for part in c_line["parts"]:
                 all_chars.extend(part["chars"])
             
-            # Filter out spacing characters, keeping only printable ones
             printable_chars = [c for c in all_chars if c["c"].strip()]
             
             if not printable_chars:
                 continue
                 
-            # Sort printable characters physically Left-to-Right (LTR) by their left coordinate x0
+            # Sort printable characters LTR by x0 coordinate
             printable_chars.sort(key=lambda c: c["bbox"][0])
             
-            # 2. Group characters into physical "word clusters" based on visual gaps
+            # Group characters into physical "word clusters" based on visual gaps
             word_clusters = []
             current_cluster = []
             
@@ -272,7 +294,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     current_cluster.append(char_obj)
                 else:
                     prev_char = current_cluster[-1]
-                    # Calculate visual gap between previous character's right edge and current's left
                     gap = char_obj["bbox"][0] - prev_char["bbox"][2]
                     
                     font_size = char_obj.get("size", 12)
@@ -286,7 +307,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if current_cluster:
                 word_clusters.append(current_cluster)
                 
-            # Sort characters inside each cluster RTL (descending x0) for correct spelling
+            # Sort characters inside each cluster RTL (descending x0)
             processed_words = []
             for cluster in word_clusters:
                 cluster.sort(key=lambda c: c["bbox"][0], reverse=True)
@@ -303,10 +324,9 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     "bbox": (wx0, wy0, wx1, wy1)
                 })
                 
-            # 3. Sort the completed words RTL (descending by their right edge x1)
+            # Sort the completed words RTL (descending by right edge x1)
             processed_words.sort(key=lambda w: w["bbox"][2], reverse=True)
             
-            # Synchronize reconstructed combined text and characters list
             combined_text = ""
             combined_chars = []
             
@@ -314,7 +334,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 combined_text += w["text"]
                 combined_chars.extend(w["chars"])
                 
-                # Insert physical visual spaces between words
                 if idx < len(processed_words) - 1:
                     combined_text += " "
                     next_word = processed_words[idx + 1]
@@ -415,7 +434,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         CATCHWORD_COL_X = LINE_NUM_COL_X + NUM_TO_CATCH_GAP
         # =========================================================================
 
-        avg_chars = round(sum(len(b["physical_text"]) for b in biblical_lines) / len(biblical_lines))
+        # CALIBRATE USING BIBLICAL TEXT (TRUNCATES FILLER WORDS TO FIND TRUE AVERAGE CONTENT LENGTH)
+        avg_chars = round(sum(len(b["biblical_text"]) for b in biblical_lines) / len(biblical_lines))
         prev_first_word = "—"
         
         for block in biblical_lines:
@@ -442,11 +462,12 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             baseline_y = line_center_y + 3
             
-            score_val = avg_chars - len(physical_text)
+            # Score against the biblical text (excluding filler)
+            score_val = avg_chars - len(biblical_text)
             if score_val > 0:
-                score_str = f"ח{hebrew_numerals.get(score_val, str(score_val))}"
+                score_str = f"ח{int_to_hebrew(score_val)}"
             elif score_val < 0:
-                score_str = f"י{hebrew_numerals.get(abs(score_val), str(abs(score_val)))}"
+                score_str = f"י{int_to_hebrew(abs(score_val))}"
             else:
                 score_str = "שת"     
                 
@@ -527,7 +548,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     )
                     break 
                     
-    # Save the output directly to the stream buffer
+    # Save output to buffer
     doc.save(output_buffer, garbage=4, deflate=True)
     doc.close()
 
