@@ -458,8 +458,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
                     char_obj["is_biblical"] = False
             
-            # =========================================================================
-            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION
+           # =========================================================================
+            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION (WITH HASHEM GAP CORRECTION)
             # =========================================================================
             local_widths = [c["bbox"][2] - c["bbox"][0] for c in biblical_chars if (c["bbox"][2] - c["bbox"][0]) > 1]
             if local_widths:
@@ -469,12 +469,76 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 
             # Filter printable_chars for those that are actually Hebrew
             hebrew_printable_chars = [c for c in combined_chars if any('\u0590' <= char <= '\u05fe' for char in c["c"])]
-            
-            # Initialize effective character density with standard biblical letters
             hebrew_biblical_chars = [c for c in hebrew_printable_chars if c.get("is_biblical", True)]
-            effective_char_count = len(hebrew_biblical_chars)
             
-            # Group contiguous Hebrew filler runs
+            # 1. Identify "יהוה" (Hashem) clusters in the biblical words
+            hashem_clusters = []
+            for cluster in biblical_word_clusters:
+                word_text = "".join([c["c"] for c in sorted(cluster, key=lambda c: c["bbox"][0], reverse=True)])
+                clean_word = re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(word_text))
+                if clean_word == "יהוה":
+                    hashem_clusters.append(cluster)
+            
+            # 2. Exclude Hashem characters from the base count (we will calculate them physically)
+            hashem_char_ids = {id(c) for cluster in hashem_clusters for c in cluster}
+            non_hashem_biblical_chars = [c for c in hebrew_biblical_chars if id(c) not in hashem_char_ids]
+            
+            # Start effective_char_count with standard non-Hashem biblical characters
+            effective_char_count = len(non_hashem_biblical_chars)
+            
+            # 3. Add Hashem words using physical width and adjacent typesetting padding
+            if hashem_clusters and biblical_word_clusters:
+                # Sort all biblical clusters physically from left to right to measure spaces accurately
+                sorted_biblical_clusters = sorted(biblical_word_clusters, key=lambda cl: min(c["bbox"][0] for c in cl))
+                
+                for cluster in hashem_clusters:
+                    c_xs = [c["bbox"][0] for c in cluster] + [c["bbox"][2] for c in cluster]
+                    if c_xs:
+                        c_min = min(c_xs)
+                        c_max = max(c_xs)
+                        
+                        # Find where this cluster sits in physical order
+                        try:
+                            idx = sorted_biblical_clusters.index(cluster)
+                        except ValueError:
+                            idx = -1
+                            
+                        # Measure left gap to previous word
+                        left_gap = 0.0
+                        if idx > 0:
+                            prev_cluster = sorted_biblical_clusters[idx - 1]
+                            prev_xs = [c["bbox"][0] for c in prev_cluster] + [c["bbox"][2] for c in prev_cluster]
+                            if prev_xs:
+                                left_gap = c_min - max(prev_xs)
+                                
+                        # Measure right gap to next word
+                        right_gap = 0.0
+                        if idx != -1 and idx < len(sorted_biblical_clusters) - 1:
+                            next_cluster = sorted_biblical_clusters[idx + 1]
+                            next_xs = [c["bbox"][0] for c in next_cluster] + [c["bbox"][2] for c in next_cluster]
+                            if next_xs:
+                                right_gap = min(next_xs) - c_max
+                                
+                        # Standard typographic spacing threshold (~35% of font size)
+                        font_size = cluster[0].get("size", 12)
+                        std_space = font_size * 0.35
+                        
+                        # Compute excess padding introduced by the black box
+                        excess_left = max(0.0, left_gap - std_space) if left_gap > std_space else 0.0
+                        excess_right = max(0.0, right_gap - std_space) if right_gap > std_space else 0.0
+                        
+                        # The word's total physical space footprint on the line
+                        total_footprint = (c_max - c_min) + excess_left + excess_right
+                        equivalent_chars = total_footprint / avg_char_width
+                        
+                        effective_char_count += max(4.0, equivalent_chars)
+                    else:
+                        effective_char_count += 4.0
+            else:
+                # Fallback if no hashem found or no clusters
+                effective_char_count += 4.0 * len(hashem_clusters)
+                
+            # 4. Group contiguous Hebrew filler runs (e.g. overstruck Ashrei)
             filler_runs = []
             current_run = []
             for c in hebrew_printable_chars:
