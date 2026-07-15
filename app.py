@@ -425,17 +425,12 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     char_obj["is_biblical"] = False
             
             # =========================================================================
-            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION (REMOVED PADDING INFLATION BUG)
+            # LITERAL-CHARACTER-COUNT-BASED DENSITY CALCULATION (PERMANENTLY SOLVED)
             # =========================================================================
-            local_widths = [c["bbox"][2] - c["bbox"][0] for c in biblical_chars if (c["bbox"][2] - c["bbox"][0]) > 1]
-            if local_widths:
-                avg_char_width = sum(local_widths) / len(local_widths)
-            else:
-                avg_char_width = 10.0
-                
             hebrew_printable_chars = [c for c in combined_chars if any('\u0590' <= char <= '\u05fe' for char in c["c"])]
             hebrew_biblical_chars = [c for c in hebrew_printable_chars if c.get("is_biblical", True)]
             
+            # Detect instances of Hashem
             hashem_clusters = []
             for cluster in biblical_word_clusters:
                 word_text = "".join([c["c"] for c in sorted(cluster, key=lambda c: c["bbox"][0], reverse=True)])
@@ -446,24 +441,13 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             hashem_char_ids = {id(c) for cluster in hashem_clusters for c in cluster}
             non_hashem_biblical_chars = [c for c in hebrew_biblical_chars if id(c) not in hashem_char_ids]
             
+            # 1. Base count of normal biblical characters (exactly 1.0 per letter)
             effective_char_count = len(non_hashem_biblical_chars)
             
-            if hashem_clusters and biblical_word_clusters:
-                for cluster in hashem_clusters:
-                    c_xs = [c["bbox"][0] for c in cluster] + [c["bbox"][2] for c in cluster]
-                    if c_xs:
-                        c_min = min(c_xs)
-                        c_max = max(c_xs)
-                        
-                        # We calculate ONLY the actual physical width of the word itself.
-                        # Do NOT add excess padding/white space around it as characters.
-                        equivalent_chars = (c_max - c_min) / avg_char_width
-                        effective_char_count += max(4.0, equivalent_chars)
-                    else:
-                        effective_char_count += 4.0
-            else:
-                effective_char_count += 4.0 * len(hashem_clusters)
-                
+            # 2. Hashem is strictly 4.0 characters, completely ignoring black-box physical widths
+            effective_char_count += 4.0 * len(hashem_clusters)
+            
+            # 3. Filler runs (e.g., 'אשריאשריאשרי') are strictly 1.0 character per literal letter
             filler_runs = []
             current_run = []
             for c in hebrew_printable_chars:
@@ -477,10 +461,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 filler_runs.append(current_run)
                 
             for run in filler_runs:
-                xs = [c["bbox"][0] for c in run] + [c["bbox"][2] for c in run]
-                if xs:
-                    run_width = max(xs) - min(xs)
-                    effective_char_count += run_width / avg_char_width
+                effective_char_count += len(run)
             
             valid_blocks.append({
                 "physical_text": cleaned_physical,
