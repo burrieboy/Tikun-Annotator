@@ -394,7 +394,8 @@ def generate_annotated_tikun(input_pdf, output_pdf):
                     )
                     break # Found the leftmost stretchable letter. Stop looking.
                     
-    doc.save(output_pdf)
+  # DO NOT use a filename string here
+    doc.save(output_buffer, garbage=4, deflate=True)
     doc.close()
     print(f"\nSuccess! Your cleaned and fully annotated file '{output_pdf}' is ready.")
 
@@ -403,40 +404,46 @@ def generate_annotated_tikun(input_pdf, output_pdf):
 # IMPORTANT: Delete the last line "generate_annotated_tikun(...)" 
 # because we will call it from the button below.
 
-def generate_annotated_tikun_streamlit(input_pdf_stream, output_buffer):
-    # (Insert your entire original function here...)
-    # (Inside the function, change the very last line from: 
-    # doc.save(output_pdf) 
-    # to: 
-    # doc.save(output_buffer)
-    # doc.close()
-    pass 
+def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
+    # Use 'stream' to read the uploaded file directly from memory
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+    
+    # --- [PASTE YOUR PROCESSING LOGIC HERE] ---
+    # ... (Keep all your existing processing code here) ...
+    # ...
+    
+    # CRITICAL: Replace your old doc.save("filename.pdf") with this:
+    doc.save(output_buffer, garbage=4, deflate=True)
+    doc.close()
 
 # --- STREAMLIT UI ---
 st.title("Tikun Annotator")
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
 if uploaded_file is not None:
-    if st.button("Annotate PDF"):
-        with st.spinner("Processing..."):
-            # Create a buffer to save the PDF to memory
-            output_buffer = io.BytesIO()
-            
-            # Run your exact logic
-            # Pass the uploaded_file as the input
-            generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
-            
-            st.success("Success!")
-            # ... your code that processes the PDF ends here ...
-
-        # THIS IS THE PART TO ADD/FIX:
-        # Move the "cursor" back to the start of the file
-        output_buffer.seek(0) 
-
-        # Now create the button
-        st.download_button(
-            label="Download Annotated PDF",
-            data=output_buffer,
-            file_name="annotated_tikun.pdf",
-            mime="application/pdf"
-        )
+if st.button("Annotate PDF"):
+    try:
+        # Create a buffer in memory
+        output_buffer = io.BytesIO()
+        
+        # Run your logic
+        # IMPORTANT: Make sure inside this function, you use:
+        # doc.save(output_buffer, garbage=4, deflate=True)
+        # NOT: doc.save("annotated_tikun.pdf")
+        generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
+        
+        # Rewind and Check
+        output_buffer.seek(0)
+        
+        if output_buffer.getbuffer().nbytes == 0:
+            st.error("The file was processed, but it is empty. Check if the function is saving to the buffer correctly.")
+        else:
+            st.success(f"Success! File size: {output_buffer.getbuffer().nbytes} bytes")
+            st.download_button(
+                label="Download Annotated PDF",
+                data=output_buffer,
+                file_name="annotated_tikun.pdf",
+                mime="application/pdf"
+            )
+    except Exception as e:
+        st.error(f"The program crashed with this error: {e}")
