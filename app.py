@@ -544,27 +544,27 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
         for i, block in enumerate(biblical_lines):
-            effective_char_count = block["effective_char_count"]
-            biblical_text = block["biblical_text"]
-            biblical_words_list = block["biblical_words_list"]
-            chars = block["chars"]
-            x0, y0, x1, y1 = block["bbox"]
-            line_center_y = (y0 + y1) / 2
-            
-            SCORE_X       = SCORE_COL_X
-            LINE_NUMBER_X = LINE_NUM_COL_X
-            CATCHWORD_X   = CATCHWORD_COL_X
-            
-            baseline_y = line_center_y + 3
-            
-            score_val = avg_chars - effective_char_count
-            score_val_rounded = round(score_val)
-            if score_val_rounded > 0:
-                score_str = f"ח{int_to_hebrew(score_val_rounded)}"
-            elif score_val_rounded < 0:
-                score_str = f"י{int_to_hebrew(abs(score_val_rounded))}"
-            else:
-                score_str = "שת"    
+    # --- START OVERRIDE ---
+    raw_text = block["biblical_text"].replace(" ", "")
+    
+    if "אשריאשריאשרי" in raw_text:
+        # Force the character count to be very high for this specific line
+        block["effective_char_count"] = 48.0
+        print(f"DEBUG: FORCED Ashrei line: {block['biblical_text']}")
+    # --- END OVERRIDE ---
+
+    # --- CALCULATE SCORE ---
+    score_val = FIXED_AVG - block["effective_char_count"]
+    score_val_rounded = round(score_val)
+    
+    # Add a visual "!" to the score in the PDF to prove this code is running
+    if score_val_rounded > 0:
+        score_str = f"ח{int_to_hebrew(score_val_rounded)}!" 
+    elif score_val_rounded < 0:
+        score_str = f"י{int_to_hebrew(abs(score_val_rounded))}!"
+    else:
+        score_str = "שת!"
+    # -----------------------    
                 
             catch_word = prev_first_word
             
