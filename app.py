@@ -448,8 +448,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             effective_char_count += 4.0 * len(hashem_clusters)
             
             # 3. Filler runs handling (with special normalization for triple Ashrei)
-                        
-            # 3. Filler runs handling (with special normalization for triple Ashrei)
             filler_runs = []
             current_run = []
             for c in hebrew_printable_chars:
@@ -463,21 +461,15 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 filler_runs.append(current_run)
                 
             for run in filler_runs:
-                # 1. Clean the text more aggressively
+                # Extract clean run text to check for triple Ashrei
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
-                # 2. Debug: See what the program actually sees
-                if len(run_text) > 10: 
-                    print(f"DEBUG: Found run of length {len(run_text)}: {run_text}")
-                
-                # 3. Relaxed check: Does the run contain the pattern, even with extras?
                 if "אשריאשריאשרי" in run_text:
-                    effective_char_count += 25.0  # Increased to 25 to force a visible change
-                    print(f"DEBUG: MATCH FOUND! Applied weight 25.0")
+                    # Normalized as: 3 words * 3 letters + 2 spaces = 11 characters
+                    effective_char_count += 11.0
                 else:
                     effective_char_count += len(run)
             
-                      
             valid_blocks.append({
                 "physical_text": cleaned_physical,
                 "biblical_text": cleaned_biblical,
@@ -543,35 +535,28 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         if redactions_to_apply:
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
-  # =========================================================================
-        # SANITY CHECK: FIXED_AVG & INITIALIZATION
-        # =========================================================================
-        FIXED_AVG = 50.0 
-        biblical_words_list = [] # Initializing this to prevent the NameError
-
         for i, block in enumerate(biblical_lines):
-            # --- START OVERRIDE ---
-            raw_text = block["biblical_text"].replace(" ", "")
+            effective_char_count = block["effective_char_count"]
+            biblical_text = block["biblical_text"]
+            biblical_words_list = block["biblical_words_list"]
+            chars = block["chars"]
+            x0, y0, x1, y1 = block["bbox"]
+            line_center_y = (y0 + y1) / 2
             
-            if "אשריאשריאשרי" in raw_text:
-                # Force the character count to be very high for this specific line
-                block["effective_char_count"] = 48.0
-                print(f"DEBUG: FORCED Ashrei line: {block['biblical_text']}")
-            # --- END OVERRIDE ---
-
-            # --- CALCULATE SCORE ---
-            score_val = FIXED_AVG - block["effective_char_count"]
+            SCORE_X       = SCORE_COL_X
+            LINE_NUMBER_X = LINE_NUM_COL_X
+            CATCHWORD_X   = CATCHWORD_COL_X
+            
+            baseline_y = line_center_y + 3
+            
+            score_val = avg_chars - effective_char_count
             score_val_rounded = round(score_val)
-            
-            # Add a visual "!" to the score in the PDF to prove this code is running
             if score_val_rounded > 0:
-                score_str = f"ח{int_to_hebrew(score_val_rounded)}!" 
+                score_str = f"ח{int_to_hebrew(score_val_rounded)}"
             elif score_val_rounded < 0:
-                score_str = f"י{int_to_hebrew(abs(score_val_rounded))}!"
+                score_str = f"י{int_to_hebrew(abs(score_val_rounded))}"
             else:
-                score_str = "שת!"
-            # -----------------------
-    # -----------------------    
+                score_str = "שת"    
                 
             catch_word = prev_first_word
             
