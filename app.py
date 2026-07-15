@@ -6,7 +6,16 @@ import re
 import urllib.request
 
 # --- [PASTE YOUR EXACT FUNCTION HERE] ---
-import fitz
+# Run the program
+# Just paste the big function you provided earlier below this line.
+# IMPORTANT: Delete the last line "generate_annotated_tikun(...)" 
+# because we will call it from the button below.
+
+def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
+    # Use 'stream' to read the uploaded file directly from memory
+    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
+    
+   import fitz
 import re
 import urllib.request
 import os
@@ -398,23 +407,6 @@ def generate_annotated_tikun(input_pdf, output_pdf):
     doc.save(output_buffer, garbage=4, deflate=True)
     doc.close()
     print(f"\nSuccess! Your cleaned and fully annotated file '{output_pdf}' is ready.")
-
-# Run the program
-# Just paste the big function you provided earlier below this line.
-# IMPORTANT: Delete the last line "generate_annotated_tikun(...)" 
-# because we will call it from the button below.
-
-def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
-    # Use 'stream' to read the uploaded file directly from memory
-    doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-    
-    # --- [PASTE YOUR PROCESSING LOGIC HERE] ---
-    # ... (Keep all your existing processing code here) ...
-    # ...
-    
-    # CRITICAL: Replace your old doc.save("filename.pdf") with this:
-    doc.save(output_buffer, garbage=4, deflate=True)
-    doc.close()
 
 # --- STREAMLIT UI ---
 st.title("Tikun Annotator")
