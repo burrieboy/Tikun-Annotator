@@ -421,7 +421,7 @@ st.title("Tikun Annotator")
 uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
 if uploaded_file is not None:
-if st.button("Annotate PDF"):
+    if st.button("Annotate PDF"):
     try:
         # Create a buffer in memory
         output_buffer = io.BytesIO()
