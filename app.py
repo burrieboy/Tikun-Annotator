@@ -422,28 +422,28 @@ uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
 if uploaded_file is not None:
     if st.button("Annotate PDF"):
-    try:
-        # Create a buffer in memory
-        output_buffer = io.BytesIO()
-        
-        # Run your logic
-        # IMPORTANT: Make sure inside this function, you use:
-        # doc.save(output_buffer, garbage=4, deflate=True)
-        # NOT: doc.save("annotated_tikun.pdf")
-        generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
-        
-        # Rewind and Check
-        output_buffer.seek(0)
-        
-        if output_buffer.getbuffer().nbytes == 0:
-            st.error("The file was processed, but it is empty. Check if the function is saving to the buffer correctly.")
-        else:
-            st.success(f"Success! File size: {output_buffer.getbuffer().nbytes} bytes")
-            st.download_button(
-                label="Download Annotated PDF",
-                data=output_buffer,
-                file_name="annotated_tikun.pdf",
-                mime="application/pdf"
-            )
-    except Exception as e:
-        st.error(f"The program crashed with this error: {e}")
+        try:
+            # Create a buffer in memory
+            output_buffer = io.BytesIO()
+            
+            # Run your logic
+            # IMPORTANT: Make sure inside this function, you use:
+            # doc.save(output_buffer, garbage=4, deflate=True)
+            # NOT: doc.save("annotated_tikun.pdf")
+            generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
+            
+            # Rewind and Check
+            output_buffer.seek(0)
+            
+            if output_buffer.getbuffer().nbytes == 0:
+                st.error("The file was processed, but it is empty. Check if the function is saving to the buffer correctly.")
+            else:
+                st.success(f"Success! File size: {output_buffer.getbuffer().nbytes} bytes")
+                st.download_button(
+                    label="Download Annotated PDF",
+                    data=output_buffer,
+                    file_name="annotated_tikun.pdf",
+                    mime="application/pdf"
+                )
+        except Exception as e:
+            st.error(f"The program crashed with this error: {e}")
