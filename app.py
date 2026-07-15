@@ -74,7 +74,7 @@ RIGHT_CROP_PERCENT  = 0.04
 # =========================================================================
 # LINE NUMBER CONFIGURATION
 # =========================================================================
-NUMBER_FONT_SIZE    = 9         
+NUMBER_FONT_SIZE    = 9        
 NUMBER_COLOR        = (0, 0, 0) 
 
 stretchable_letters = {'ד', 'ר', 'ק', 'ת', 'ל', 'ה'}
@@ -461,11 +461,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 filler_runs.append(current_run)
                 
             for run in filler_runs:
+                # Extract clean run text to check for triple Ashrei
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
-                # Check for the triple filler occurrence
                 if "אשריאשריאשרי" in run_text:
-                    # Treat as 3 regular words of 3 letters each, with 2 separating space metrics = 11 characters
+                    # Normalized as: 3 words * 3 letters + 2 spaces = 11 characters
                     effective_char_count += 11.0
                 else:
                     effective_char_count += len(run)
@@ -556,7 +556,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             elif score_val_rounded < 0:
                 score_str = f"י{int_to_hebrew(abs(score_val_rounded))}"
             else:
-                score_str = "שת"     
+                score_str = "שת"    
                 
             catch_word = prev_first_word
             
@@ -649,7 +649,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
 # STREAMLIT USER INTERFACE ENTRYPOINT
 # =========================================================================
 def main():
-    st.set_page_index = 0
+    st.set_page_config(page_title="Hebrew Tikun Annotator")
     st.title("📜 Hebrew Tikun PDF Annotator")
     st.write(
         "Upload a Hebrew Tikun PDF. The app will automatically calculate spacing densities, "
