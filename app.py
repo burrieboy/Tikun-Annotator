@@ -425,7 +425,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     char_obj["is_biblical"] = False
             
             # =========================================================================
-            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION
+            # PHYSICAL-WIDTH-BASED DENSITY CALCULATION (REMOVED PADDING INFLATION BUG)
             # =========================================================================
             local_widths = [c["bbox"][2] - c["bbox"][0] for c in biblical_chars if (c["bbox"][2] - c["bbox"][0]) > 1]
             if local_widths:
@@ -449,42 +449,15 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             effective_char_count = len(non_hashem_biblical_chars)
             
             if hashem_clusters and biblical_word_clusters:
-                sorted_biblical_clusters = sorted(biblical_word_clusters, key=lambda cl: min(c["bbox"][0] for c in cl))
-                
                 for cluster in hashem_clusters:
                     c_xs = [c["bbox"][0] for c in cluster] + [c["bbox"][2] for c in cluster]
                     if c_xs:
                         c_min = min(c_xs)
                         c_max = max(c_xs)
                         
-                        try:
-                            idx = sorted_biblical_clusters.index(cluster)
-                        except ValueError:
-                            idx = -1
-                            
-                        left_gap = 0.0
-                        if idx > 0:
-                            prev_cluster = sorted_biblical_clusters[idx - 1]
-                            prev_xs = [c["bbox"][0] for c in prev_cluster] + [c["bbox"][2] for c in prev_cluster]
-                            if prev_xs:
-                                left_gap = c_min - max(prev_xs)
-                                
-                        right_gap = 0.0
-                        if idx != -1 and idx < len(sorted_biblical_clusters) - 1:
-                            next_cluster = sorted_biblical_clusters[idx + 1]
-                            next_xs = [c["bbox"][0] for c in next_cluster] + [c["bbox"][2] for c in next_cluster]
-                            if next_xs:
-                                right_gap = min(next_xs) - c_max
-                                
-                        font_size = cluster[0].get("size", 12)
-                        std_space = font_size * 0.35
-                        
-                        excess_left = max(0.0, left_gap - std_space) if left_gap > std_space else 0.0
-                        excess_right = max(0.0, right_gap - std_space) if right_gap > std_space else 0.0
-                        
-                        total_footprint = (c_max - c_min) + excess_left + excess_right
-                        equivalent_chars = total_footprint / avg_char_width
-                        
+                        # We calculate ONLY the actual physical width of the word itself.
+                        # Do NOT add excess padding/white space around it as characters.
+                        equivalent_chars = (c_max - c_min) / avg_char_width
                         effective_char_count += max(4.0, equivalent_chars)
                     else:
                         effective_char_count += 4.0
@@ -642,16 +615,13 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             # TARGETING ONLY THE LEFTMOST (READING-ORDER LAST) STRETCHABLE LETTER
             # =========================================================================
             biblical_chars = [c for c in chars if c.get("is_biblical", True) and c["c"].strip()]
-            
-            # Sorted physically from left (low X) to right (high X). 
-            # In RTL Hebrew, the leftmost character is the end/last of the line.
             biblical_chars_sorted = sorted(biblical_chars, key=lambda c: c["bbox"][0])
             
             target_char = None
             for char_obj in biblical_chars_sorted:
                 if char_obj["c"] in stretchable_letters:
                     target_char = char_obj
-                    break  # Found the first (leftmost) stretchable character! Stop scanning.
+                    break  
             
             if target_char:
                 cx0, cy0, cx1, cy1 = target_char["bbox"]
