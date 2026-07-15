@@ -463,13 +463,17 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 filler_runs.append(current_run)
                 
             for run in filler_runs:
-                # Extract clean run text to check for triple Ashrei
+                # 1. Clean the text more aggressively
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
-                if "אאששררייאאששררייאאששרריי" in run_text:
-                    # UPDATED: Increased weight to 20.0 to force the line to be 
-                    # treated as 'fuller', reducing the condensed score.
-                    effective_char_count += 20.0
+                # 2. Debug: See what the program actually sees
+                if len(run_text) > 10: 
+                    print(f"DEBUG: Found run of length {len(run_text)}: {run_text}")
+                
+                # 3. Relaxed check: Does the run contain the pattern, even with extras?
+                if "אשריאשריאשרי" in run_text:
+                    effective_char_count += 25.0  # Increased to 25 to force a visible change
+                    print(f"DEBUG: MATCH FOUND! Applied weight 25.0")
                 else:
                     effective_char_count += len(run)
             
