@@ -407,21 +407,18 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             cleaned_physical_words_rtl = list(reversed(cleaned_physical_words))
             cleaned_physical = " ".join(cleaned_physical_words_rtl)
-            cleaned_physical_words_rtl = list(reversed(cleaned_physical_words))
-            cleaned_physical = " ".join(cleaned_physical_words_rtl)
             
             # ==========================================
-            # TEMPORARY DEBUG PRINT (Paste this here!)
+            # TEMPORARY DEBUG PRINT
             # ==========================================
             if "חטאתיך" in cleaned_physical or "יהוה" in cleaned_physical or "הוהי" in cleaned_physical:
                 st.write(f"🔍 **Debug Parser Saw:** `{cleaned_physical}`")
             # ==========================================
             
-           
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
 
-           # ==========================================
+            # ==========================================
             # DIAGNOSTIC 2.0: Match character to width
             # ==========================================
             if "יהוה" in cleaned_physical:
@@ -458,7 +455,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
                     char_obj["is_biblical"] = False
             
-           # =========================================================================
+            # =========================================================================
             # PHYSICAL-WIDTH-BASED DENSITY CALCULATION (WITH HASHEM GAP CORRECTION)
             # =========================================================================
             local_widths = [c["bbox"][2] - c["bbox"][0] for c in biblical_chars if (c["bbox"][2] - c["bbox"][0]) > 1]
@@ -706,53 +703,65 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     arrow_tip_y = cy0 + ARROW_DOWNWARD_SHIFT
                     arrow_top_y = arrow_tip_y - 4.5
                     
+                    # Vertical Line of the Arrow
                     page.draw_line(
                         fitz.Point(char_center_x, arrow_top_y), 
                         fitz.Point(char_center_x, arrow_tip_y), 
                         color=(0.8, 0.1, 0.1), 
                         width=1
                     )
+                    # Left wing of arrow head
                     page.draw_line(
                         fitz.Point(char_center_x - 1.2, arrow_tip_y - 1.5), 
-                        fitz.Point(char_center_x, arrow_tip_y), 
+                        fitz.Point(char_center_x, arrow_tip_y),
                         color=(0.8, 0.1, 0.1), 
                         width=1
                     )
+                    # Right wing of arrow head
                     page.draw_line(
                         fitz.Point(char_center_x + 1.2, arrow_tip_y - 1.5), 
-                        fitz.Point(char_center_x, arrow_tip_y), 
+                        fitz.Point(char_center_x, arrow_tip_y),
                         color=(0.8, 0.1, 0.1), 
                         width=1
                     )
-                    break 
-                    
-    # Save output to buffer
-    doc.save(output_buffer, garbage=4, deflate=True)
+
+    # Save the modified document back to your Streamlit output buffer
+    doc.save(output_buffer, garbage=3, deflate=True)
     doc.close()
 
-# --- STREAMLIT UI ---
-st.title("Tikun Annotator")
-uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 
-if uploaded_file is not None:
-    if st.button("Annotate PDF"):
-        try:
-            output_buffer = io.BytesIO()
-            
-            with st.spinner("Processing... Please wait."):
-                generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
-            
-            output_buffer.seek(0)
-            
-            if output_buffer.getbuffer().nbytes == 0:
-                st.error("The file was processed, but it is empty.")
-            else:
-                st.success(f"Success! File size: {output_buffer.getbuffer().nbytes} bytes")
+# =========================================================================
+# STREAMLIT USER INTERFACE ENTRYPOINT
+# =========================================================================
+def main():
+    st.set_page_index = 0
+    st.title("📜 Hebrew Tikun PDF Annotator")
+    st.write(
+        "Upload a Hebrew Tikun PDF. The app will automatically calculate spacing densities, "
+        "detect stretchable letters (adding target red arrows), align straight margin metrics, "
+        "and overlay customized helper headers/catchwords."
+    )
+
+    uploaded_file = st.file_uploader("Choose a Tikun PDF file to process", type=["pdf"])
+
+    if uploaded_file is not None:
+        # Create an in-memory buffer to save the processed PDF output
+        output_pdf_buffer = io.BytesIO()
+        
+        with st.spinner("Analyzing text layout and inserting custom Hebrew annotations..."):
+            try:
+                generate_annotated_tikun_streamlit(uploaded_file, output_pdf_buffer)
+                st.success("Successfully processed and annotated PDF layout!")
+                
+                # Provide instant download functionality
                 st.download_button(
-                    label="Download Annotated PDF",
-                    data=output_buffer,
-                    file_name="annotated_tikun.pdf",
+                    label="📥 Download Annotated PDF",
+                    data=output_pdf_buffer.getvalue(),
+                    file_name="annotated_tikun_margins.pdf",
                     mime="application/pdf"
                 )
-        except Exception as e:
-            st.error(f"The program crashed with this error: {e}")
+            except Exception as e:
+                st.error(f"Processing failed: {e}")
+
+if __name__ == "__main__":
+    main()
