@@ -177,7 +177,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                                 })
         
         # ---------------------------------------------------------------------
-        # DETECT AND CONSOLIDATE SPLIT HORIZONTAL LINES (e.g. text + filler)
+        # DETECT AND CONSOLIDATE SPLIT HORIZONTAL LINES
         # ---------------------------------------------------------------------
         raw_lines = []
         for block in page_data.get("blocks", []):
@@ -214,6 +214,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     raw_lines.append({
                         "text": line_text,
                         "chars": all_chars,
+                        "spans": line["spans"], # Keep track of individual raw spans
                         "bbox": line["bbox"],
                         "center_y": center_y,
                         "x0": x0
@@ -249,16 +250,43 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         # Process and clean consolidated rows
         valid_blocks = []
         for c_line in consolidated_lines:
-            # Sort parts Right-to-Left (larger x0 first) to maintain correct reading direction
-            parts_sorted = sorted(c_line["parts"], key=lambda p: p["x0"], reverse=True)
+            # 1. Gather all spans from all parts of this consolidated row
+            all_spans = []
+            for part in c_line["parts"]:
+                all_spans.extend(part["spans"])
             
+            # 2. Sort spans from Right to Left (by their physical right edge 'x1' descending)
+            # This completely solves out-of-order text extraction for styled/black-boxed words
+            all_spans.sort(key=lambda s: s["bbox"][2], reverse=True)
+            
+            # 3. Physically reconstruct the combined text and chars in correct reading order
             combined_text = ""
             combined_chars = []
-            for part in parts_sorted:
-                if combined_text:
-                    combined_text += " "
-                combined_text += part["text"]
-                combined_chars.extend(part["chars"])
+            
+            for idx, span in enumerate(all_spans):
+                span_text = "".join([c["c"] for c in span["chars"]])
+                combined_text += span_text
+                combined_chars.extend(span["chars"])
+                
+                # Check if we need to dynamically inject a missing space between spans
+                if idx < len(all_spans) - 1:
+                    next_span = all_spans[idx + 1]
+                    curr_x0 = span["bbox"][0]
+                    next_x1 = next_span["bbox"][2]
+                    gap = curr_x0 - next_x1
+                    
+                    font_size = span["size"]
+                    gap_threshold = max(3.0, font_size * 0.2)
+                    
+                    if gap > gap_threshold and not span_text.endswith(" ") and not "".join([c["c"] for c in next_span["chars"]]).startswith(" "):
+                        combined_text += " "
+                        dummy_space = {
+                            "c": " ",
+                            "bbox": (next_x1, span["bbox"][1], curr_x0, span["bbox"][3]),
+                            "size": font_size,
+                            "font": span.get("font", "")
+                        }
+                        combined_chars.append(dummy_space)
             
             raw_cleaned = combined_text.strip()
             ignore_indices = set()
