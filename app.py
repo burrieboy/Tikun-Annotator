@@ -424,7 +424,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
                     char_obj["is_biblical"] = False
             
-            # =========================================================================
+           # =========================================================================
             # LITERAL-CHARACTER-COUNT-BASED DENSITY CALCULATION (PERMANENTLY SOLVED)
             # =========================================================================
             hebrew_printable_chars = [c for c in combined_chars if any('\u0590' <= char <= '\u05fe' for char in c["c"])]
@@ -447,7 +447,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             # 2. Hashem is strictly 4.0 characters, completely ignoring black-box physical widths
             effective_char_count += 4.0 * len(hashem_clusters)
             
-            # 3. Filler runs (e.g., 'אשריאשריאשרי') are strictly 1.0 character per literal letter
+            # 3. Filler runs handling (with special normalization for triple Ashrei)
             filler_runs = []
             current_run = []
             for c in hebrew_printable_chars:
@@ -461,48 +461,14 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 filler_runs.append(current_run)
                 
             for run in filler_runs:
-                effective_char_count += len(run)
-            
-            valid_blocks.append({
-                "physical_text": cleaned_physical,
-                "biblical_text": cleaned_biblical,
-                "biblical_words_list": cleaned_biblical_words_rtl, 
-                "chars": combined_chars,
-                "bbox": c_line["bbox"],
-                "inline_num_rect": inline_num_rect,
-                "inline_num_str": inline_num_str,
-                "effective_char_count": effective_char_count
-            })
-        
-        valid_blocks.sort(key=lambda b: b["bbox"][1])
-        biblical_lines = valid_blocks
-        
-        if not biblical_lines:
-            continue
-            
-        for block in biblical_lines:
-            x0, y0, x1, y1 = block["bbox"]
-            line_center_y = (y0 + y1) / 2
-            
-            num_str = block["inline_num_str"]
-            num_rect = block["inline_num_rect"]
-            
-            if not num_str and digit_spans:
-                best_match = None
-                best_dist = 99999
-                for span in digit_spans:
-                    dist = abs(span["center_y"] - line_center_y)
-                    if dist < 20 and dist < best_dist:
-                        best_dist = dist
-                        best_match = span
+                # Extract clean run text to check for triple Ashrei
+                run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
-                if best_match:
-                    num_str = best_match["text"]
-                    num_rect = best_match["bbox"]
-                    digit_spans.remove(best_match)
-            
-            block["matched_num_str"] = num_str
-            block["matched_num_rect"] = num_rect
+                if "אשריאשריאשרי" in run_text:
+                    # Normalized as: 3 words * 3 letters + 2 spaces = 11 characters
+                    effective_char_count += 11.0
+                else:
+                    effective_char_count += len(run)
             
         # =========================================================================
         # STRAIGHT MARGIN GENERATION
