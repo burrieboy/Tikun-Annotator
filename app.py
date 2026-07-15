@@ -449,6 +449,19 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             # 3. Filler runs handling (with special normalization for triple Ashrei)
                         
+            # 3. Filler runs handling (with special normalization for triple Ashrei)
+            filler_runs = []
+            current_run = []
+            for c in hebrew_printable_chars:
+                if not c.get("is_biblical", True):
+                    current_run.append(c)
+                else:
+                    if current_run:
+                        filler_runs.append(current_run)
+                        current_run = []
+            if current_run:
+                filler_runs.append(current_run)
+                
             for run in filler_runs:
                 # Extract clean run text to check for triple Ashrei
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
