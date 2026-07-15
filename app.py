@@ -110,6 +110,52 @@ def int_to_hebrew(n):
 def fix_rtl(text):
     return text[::-1]
 
+def flag_fillers_in_line_chars(chars):
+    """
+    Analyzes a list of character dicts for a line, finds contiguous runs of 
+    characters consisting entirely of the filler letters {א, ש, ר, י},
+    and flags them as non-biblical (is_biblical = False) if they meet the filler criteria.
+    This works perfectly on reversed/visual Hebrew storage!
+    """
+    filler_letters = {'א', 'ש', 'ר', 'י'}
+    n = len(chars)
+    i = 0
+    while i < n:
+        c_text = chars[i]["c"]
+        base = strip_nikud(c_text).strip()
+        base_clean = re.sub(r'[^\u05d0-\u05ea]', '', base) # Extract pure Hebrew letter
+        
+        # If this character is a potential filler letter
+        if base_clean and all(char in filler_letters for char in base_clean):
+            start = i
+            while i < n:
+                next_c_text = chars[i]["c"]
+                next_base = strip_nikud(next_c_text).strip()
+                next_base_clean = re.sub(r'[^\u05d0-\u05ea]', '', next_base)
+                
+                # If we hit a Hebrew character that is NOT part of the filler set, break the run
+                if next_base_clean and any(char not in filler_letters for char in next_base_clean):
+                    break
+                i += 1
+            end = i
+            
+            # Construct the clean run text
+            run_chars = [chars[j] for j in range(start, end) if chars[j]["c"].strip()]
+            run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run_chars])
+            
+            # If the filler sequence is long enough, or is explicitly one of the Ashrei variants
+            is_run_filler = False
+            if len(run_text) >= 5:
+                is_run_filler = True
+            elif run_text in {"אשרי", "ירשא", "אשריי", "יירשא"}:
+                is_run_filler = True
+                
+            if is_run_filler:
+                for j in range(start, end):
+                    chars[j]["is_biblical"] = False
+        else:
+            i += 1
+
 # =========================================================================
 # THE MAIN PROCESSING FUNCTION
 # =========================================================================
@@ -272,7 +318,14 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             if not printable_chars:
                 continue
+            
+            # 1. Initialize is_biblical to True for all characters by default
+            for c in printable_chars:
+                c["is_biblical"] = True
                 
+            # 2. Run our robust, visual-order-aware filler-tagger on raw character level
+            flag_fillers_in_line_chars(printable_chars)
+            
             printable_chars.sort(key=lambda c: c["bbox"][0])
             
             # Word Clustering
@@ -302,21 +355,21 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 cluster.sort(key=lambda c: c["bbox"][0], reverse=True)
                 word_text = "".join([c["c"] for c in cluster])
                 
+                # Separate the biblical (real) and filler text parts of this word
+                biblical_word_chars = [c for c in cluster if c.get("is_biblical", True)]
+                biblical_word_text = "".join([c["c"] for c in biblical_word_chars]).strip()
+                
                 wx0 = min(c["bbox"][0] for c in cluster)
                 wy0 = min(c["bbox"][1] for c in cluster)
                 wx1 = max(c["bbox"][2] for c in cluster)
                 wy1 = max(c["bbox"][3] for c in cluster)
                 
-                # Check for "Ashrei" filler with complete Nikud immunity
-                normalized = strip_nikud(word_text).strip()
-                normalized_clean = re.sub(r'[^\u05d0-\u05ea]', '', normalized) # Only Hebrew letters
-                is_filler = "אשרי" in normalized_clean
-                
                 processed_words.append({
                     "text": word_text,
+                    "biblical_text": biblical_word_text,
                     "chars": cluster,
                     "bbox": (wx0, wy0, wx1, wy1),
-                    "is_filler": is_filler
+                    "is_filler": len(biblical_word_text) == 0
                 })
                 
             processed_words.sort(key=lambda w: w["bbox"][2], reverse=True)
@@ -326,11 +379,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             for idx, w in enumerate(processed_words):
                 combined_text += w["text"]
-                
-                # Tag characters inside this word as non-biblical if it is a filler word
-                for char_obj in w["chars"]:
-                    char_obj["is_biblical"] = not w["is_filler"]
-                    
                 combined_chars.extend(w["chars"])
                 
                 if idx < len(processed_words) - 1:
@@ -371,7 +419,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     char_obj["is_biblical"] = False
             
             # Reconstruct pristine biblical text completely free of fillers
-            biblical_words = [w["text"] for w in processed_words if not w["is_filler"]]
+            biblical_words = [w["biblical_text"] for w in processed_words if w["biblical_text"]]
             raw_biblical_text = " ".join(biblical_words)
             cleaned_biblical = re.sub(r'^\d+\s*', '', raw_biblical_text).strip()
             cleaned_biblical = re.sub(r'\s+', ' ', cleaned_biblical).strip()
