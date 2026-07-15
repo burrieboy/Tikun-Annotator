@@ -465,8 +465,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
                 if "אשריאשריאשרי" in run_text:
-                    # Normalized as: 3 words * 3 letters + 2 spaces = 11 characters
-                    effective_char_count += 11.0
+                    # FIX: Increased from 11.0 to 48.0 to prevent overly condensed scoring
+                    effective_char_count += 48.0
                 else:
                     effective_char_count += len(run)
             
