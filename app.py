@@ -214,7 +214,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     raw_lines.append({
                         "text": line_text,
                         "chars": all_chars,
-                        "spans": line["spans"], # Keep track of individual raw spans
+                        "spans": line["spans"], 
                         "bbox": line["bbox"],
                         "center_y": center_y,
                         "x0": x0
@@ -255,9 +255,9 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             for part in c_line["parts"]:
                 all_spans.extend(part["spans"])
             
-            # 2. Sort spans from Right to Left (by their physical right edge 'x1' descending)
-            # This completely solves out-of-order text extraction for styled/black-boxed words
-            all_spans.sort(key=lambda s: s["bbox"][2], reverse=True)
+            # 2. Sort spans RTL strictly by their HORIZONTAL CENTER coordinates
+            # This ignores boundary padding artifacts from graphic backgrounds/black boxes
+            all_spans.sort(key=lambda s: (s["bbox"][0] + s["bbox"][2]) / 2, reverse=True)
             
             # 3. Physically reconstruct the combined text and chars in correct reading order
             combined_text = ""
