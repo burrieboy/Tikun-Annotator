@@ -87,7 +87,6 @@ def fix_rtl(text):
 # THE MAIN PROCESSING FUNCTION
 # =========================================================================
 def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
-    # Open PDF directly from the Streamlit file upload stream in memory
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     total_pages = len(doc)
     
@@ -250,43 +249,82 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         # Process and clean consolidated rows
         valid_blocks = []
         for c_line in consolidated_lines:
-            # 1. Gather all spans from all parts of this consolidated row
-            all_spans = []
+            # 1. Gather all raw characters from this consolidated row
+            all_chars = []
             for part in c_line["parts"]:
-                all_spans.extend(part["spans"])
+                all_chars.extend(part["chars"])
             
-            # 2. Sort spans RTL strictly by their HORIZONTAL CENTER coordinates
-            # This ignores boundary padding artifacts from graphic backgrounds/black boxes
-            all_spans.sort(key=lambda s: (s["bbox"][0] + s["bbox"][2]) / 2, reverse=True)
+            # Filter out spacing characters, keeping only printable ones
+            printable_chars = [c for c in all_chars if c["c"].strip()]
             
-            # 3. Physically reconstruct the combined text and chars in correct reading order
+            if not printable_chars:
+                continue
+                
+            # Sort printable characters physically Left-to-Right (LTR) by their left coordinate x0
+            printable_chars.sort(key=lambda c: c["bbox"][0])
+            
+            # 2. Group characters into physical "word clusters" based on visual gaps
+            word_clusters = []
+            current_cluster = []
+            
+            for char_obj in printable_chars:
+                if not current_cluster:
+                    current_cluster.append(char_obj)
+                else:
+                    prev_char = current_cluster[-1]
+                    # Calculate visual gap between previous character's right edge and current's left
+                    gap = char_obj["bbox"][0] - prev_char["bbox"][2]
+                    
+                    font_size = char_obj.get("size", 12)
+                    gap_threshold = max(3.5, font_size * 0.24)
+                    
+                    if gap > gap_threshold:
+                        word_clusters.append(current_cluster)
+                        current_cluster = [char_obj]
+                    else:
+                        current_cluster.append(char_obj)
+            if current_cluster:
+                word_clusters.append(current_cluster)
+                
+            # Sort characters inside each cluster RTL (descending x0) for correct spelling
+            processed_words = []
+            for cluster in word_clusters:
+                cluster.sort(key=lambda c: c["bbox"][0], reverse=True)
+                word_text = "".join([c["c"] for c in cluster])
+                
+                wx0 = min(c["bbox"][0] for c in cluster)
+                wy0 = min(c["bbox"][1] for c in cluster)
+                wx1 = max(c["bbox"][2] for c in cluster)
+                wy1 = max(c["bbox"][3] for c in cluster)
+                
+                processed_words.append({
+                    "text": word_text,
+                    "chars": cluster,
+                    "bbox": (wx0, wy0, wx1, wy1)
+                })
+                
+            # 3. Sort the completed words RTL (descending by their right edge x1)
+            processed_words.sort(key=lambda w: w["bbox"][2], reverse=True)
+            
+            # Synchronize reconstructed combined text and characters list
             combined_text = ""
             combined_chars = []
             
-            for idx, span in enumerate(all_spans):
-                span_text = "".join([c["c"] for c in span["chars"]])
-                combined_text += span_text
-                combined_chars.extend(span["chars"])
+            for idx, w in enumerate(processed_words):
+                combined_text += w["text"]
+                combined_chars.extend(w["chars"])
                 
-                # Check if we need to dynamically inject a missing space between spans
-                if idx < len(all_spans) - 1:
-                    next_span = all_spans[idx + 1]
-                    curr_x0 = span["bbox"][0]
-                    next_x1 = next_span["bbox"][2]
-                    gap = curr_x0 - next_x1
-                    
-                    font_size = span["size"]
-                    gap_threshold = max(3.0, font_size * 0.2)
-                    
-                    if gap > gap_threshold and not span_text.endswith(" ") and not "".join([c["c"] for c in next_span["chars"]]).startswith(" "):
-                        combined_text += " "
-                        dummy_space = {
-                            "c": " ",
-                            "bbox": (next_x1, span["bbox"][1], curr_x0, span["bbox"][3]),
-                            "size": font_size,
-                            "font": span.get("font", "")
-                        }
-                        combined_chars.append(dummy_space)
+                # Insert physical visual spaces between words
+                if idx < len(processed_words) - 1:
+                    combined_text += " "
+                    next_word = processed_words[idx + 1]
+                    dummy_space = {
+                        "c": " ",
+                        "bbox": (next_word["bbox"][2], w["bbox"][1], w["bbox"][0], w["bbox"][3]),
+                        "size": w["chars"][0].get("size", 12),
+                        "font": w["chars"][0].get("font", "")
+                    }
+                    combined_chars.append(dummy_space)
             
             raw_cleaned = combined_text.strip()
             ignore_indices = set()
@@ -322,7 +360,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
                 
-            # Skip if there's no actual biblical text left on the line after stripping filler
             if len(cleaned_biblical) == 0:
                 continue
                 
@@ -501,18 +538,15 @@ uploaded_file = st.file_uploader("Upload your PDF", type="pdf")
 if uploaded_file is not None:
     if st.button("Annotate PDF"):
         try:
-            # Create a buffer in memory
             output_buffer = io.BytesIO()
             
             with st.spinner("Processing... Please wait."):
-                # Run logic
                 generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
             
-            # Rewind and Check
             output_buffer.seek(0)
             
             if output_buffer.getbuffer().nbytes == 0:
-                st.error("The file was processed, but it is empty. Check if the function is saving to the buffer correctly.")
+                st.error("The file was processed, but it is empty.")
             else:
                 st.success(f"Success! File size: {output_buffer.getbuffer().nbytes} bytes")
                 st.download_button(
