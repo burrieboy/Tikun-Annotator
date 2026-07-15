@@ -543,10 +543,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         if redactions_to_apply:
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
-   # =========================================================================
-        # SANITY CHECK: FIXED_AVG
+  # =========================================================================
+        # SANITY CHECK: FIXED_AVG & INITIALIZATION
         # =========================================================================
         FIXED_AVG = 50.0 
+        biblical_words_list = [] # Initializing this to prevent the NameError
 
         for i, block in enumerate(biblical_lines):
             # --- START OVERRIDE ---
