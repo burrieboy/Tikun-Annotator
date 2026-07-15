@@ -467,9 +467,9 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
                 if "אשריאשריאשרי" in run_text:
-                    # UPDATED: Increased weight to 15.0 to force the line to be 
+                    # UPDATED: Increased weight to 20.0 to force the line to be 
                     # treated as 'fuller', reducing the condensed score.
-                    effective_char_count += 15.0
+                    effective_char_count += 20.0
                 else:
                     effective_char_count += len(run)
             
