@@ -136,7 +136,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         # ---------------------------------------------------------------------
         # DYNAMIC HEADER BOUNDARY DETECTION
         # ---------------------------------------------------------------------
-        # We look for "רוחב שורה" (or reversed "הרוש בחור") or a dotted/dashed separator line.
         header_y_boundary = None
         for block in page_data.get("blocks", []):
             if "lines" in block:
@@ -146,25 +145,21 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                         if "chars" in span:
                             line_text += "".join([c["c"] for c in span["chars"]])
                     
-                    # Look for keywords or lines made of 5+ dots/dashes
                     has_keyword = "רוחב שורה" in line_text or "הרוש בחור" in line_text
                     has_dots = len(re.findall(r'[\.\-\_~*·•]{5,}', line_text)) > 0
                     
                     if has_keyword or has_dots:
                         lx0, ly0, lx1, ly1 = line["bbox"]
-                        # We want to ignore everything above this line (plus a tiny safety gap)
                         current_boundary = ly1 + 2  
                         if header_y_boundary is None or current_boundary > header_y_boundary:
                             header_y_boundary = current_boundary
                             
-        # If we successfully detected a header, override the default top limit
         page_top_limit = max(top_limit, header_y_boundary) if header_y_boundary is not None else top_limit
-        # ---------------------------------------------------------------------
         
         redactions_to_apply = []
         digit_spans = []
         
-        # Gather all independent, numeric spans
+        # Gather independent digit/number spans
         for block in page_data.get("blocks", []):
             if "lines" in block:
                 for line in block["lines"]:
@@ -181,7 +176,10 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                                     "center_y": (s_y0 + s_y1) / 2
                                 })
         
-        valid_blocks = []
+        # ---------------------------------------------------------------------
+        # DETECT AND CONSOLIDATE SPLIT HORIZONTAL LINES (e.g. text + filler)
+        # ---------------------------------------------------------------------
+        raw_lines = []
         for block in page_data.get("blocks", []):
             if "lines" in block:
                 for line in block["lines"]:
@@ -195,48 +193,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                             all_chars.append(char_obj)
                         line_sizes.append((span["size"], len(span["chars"])))
                     
-                    raw_cleaned = line_text.strip()
-                    ignore_indices = set()
-                    inline_num_rect = None
-                    inline_num_str = ""
-                    
-                    digit_match = re.match(r'^(\s*)(\d+)(\s*)', line_text)
-                    if digit_match:
-                        inline_num_str = digit_match.group(2)
-                        for idx in range(digit_match.start(1), digit_match.end(3)):
-                            ignore_indices.add(idx)
-                            
-                        bboxes = []
-                        for idx in range(digit_match.start(2), digit_match.end(2)):
-                            if idx < len(all_chars):
-                                bboxes.append(fitz.Rect(all_chars[idx]["bbox"]))
-                        if bboxes:
-                            inline_num_rect = bboxes[0]
-                            for bbox in bboxes[1:]:
-                                inline_num_rect.include_rect(bbox)
-                    
-                    for match in re.finditer(r'(אשרי\s*){2,}', line_text):
-                        for idx in range(match.start(), match.end()):
-                            ignore_indices.add(idx)
-                            
-                    for idx, char_obj in enumerate(all_chars):
-                        char_obj["is_biblical"] = (idx not in ignore_indices)
-                    
-                    cleaned_physical = re.sub(r'^\d+\s*', '', raw_cleaned).strip()
-                    cleaned_biblical = re.sub(r'(אשרי\s*){2,}', ' ', cleaned_physical)
-                    cleaned_biblical = re.sub(r'\s+', ' ', cleaned_biblical).strip()
-                    
-                    if not cleaned_physical or cleaned_physical.isdigit():
-                        continue
-                        
-                    x0, y0, x1, y1 = line["bbox"]
-                    center_x = (x0 + x1) / 2
-                    center_y = (y0 + y1) / 2
-                    
-                    # CRITICAL UPDATE: Using the dynamically detected page_top_limit here
-                    if not (left_limit <= center_x <= right_limit) or not (page_top_limit <= center_y <= bottom_limit):
-                        continue
-                        
                     total_chars = sum(count for _, count in line_sizes)
                     if total_chars == 0:
                         continue
@@ -244,21 +200,115 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     if not (min_size_limit <= weighted_size <= max_size_limit):
                         continue
                     
+                    x0, y0, x1, y1 = line["bbox"]
+                    center_x = (x0 + x1) / 2
+                    center_y = (y0 + y1) / 2
+                    
+                    if not (left_limit <= center_x <= right_limit) or not (page_top_limit <= center_y <= bottom_limit):
+                        continue
+                        
+                    cleaned_physical = line_text.strip()
                     if not any('\u0590' <= char <= '\u05fe' for char in cleaned_physical):
                         continue
                         
-                    is_filler_line = "אשרי" in cleaned_physical and len(cleaned_biblical) == 0
-                    if len(cleaned_physical.split()) < 2 and not is_filler_line:
-                        continue
-                        
-                    valid_blocks.append({
-                        "physical_text": cleaned_physical,
-                        "biblical_text": cleaned_biblical,
+                    raw_lines.append({
+                        "text": line_text,
                         "chars": all_chars,
                         "bbox": line["bbox"],
-                        "inline_num_rect": inline_num_rect,
-                        "inline_num_str": inline_num_str
+                        "center_y": center_y,
+                        "x0": x0
                     })
+        
+        # Group lines with vertical centers within 6px of each other
+        consolidated_lines = []
+        raw_lines.sort(key=lambda l: l["center_y"])
+        
+        for r_line in raw_lines:
+            merged = False
+            for c_line in consolidated_lines:
+                if abs(r_line["center_y"] - c_line["center_y"]) < 6:
+                    c_line["parts"].append(r_line)
+                    cx0, cy0, cx1, cy1 = c_line["bbox"]
+                    rx0, ry0, rx1, ry1 = r_line["bbox"]
+                    c_line["bbox"] = (
+                        min(cx0, rx0),
+                        min(cy0, ry0),
+                        max(cx1, rx1),
+                        max(cy1, ry1)
+                    )
+                    c_line["center_y"] = (c_line["bbox"][1] + c_line["bbox"][3]) / 2
+                    merged = True
+                    break
+            if not merged:
+                consolidated_lines.append({
+                    "parts": [r_line],
+                    "bbox": r_line["bbox"],
+                    "center_y": r_line["center_y"]
+                })
+        
+        # Process and clean consolidated rows
+        valid_blocks = []
+        for c_line in consolidated_lines:
+            # Sort parts Right-to-Left (larger x0 first) to maintain correct reading direction
+            parts_sorted = sorted(c_line["parts"], key=lambda p: p["x0"], reverse=True)
+            
+            combined_text = ""
+            combined_chars = []
+            for part in parts_sorted:
+                if combined_text:
+                    combined_text += " "
+                combined_text += part["text"]
+                combined_chars.extend(part["chars"])
+            
+            raw_cleaned = combined_text.strip()
+            ignore_indices = set()
+            inline_num_rect = None
+            inline_num_str = ""
+            
+            digit_match = re.match(r'^(\s*)(\d+)(\s*)', combined_text)
+            if digit_match:
+                inline_num_str = digit_match.group(2)
+                for idx in range(digit_match.start(1), digit_match.end(3)):
+                    ignore_indices.add(idx)
+                    
+                bboxes = []
+                for idx in range(digit_match.start(2), digit_match.end(2)):
+                    if idx < len(combined_chars):
+                        bboxes.append(fitz.Rect(combined_chars[idx]["bbox"]))
+                if bboxes:
+                    inline_num_rect = bboxes[0]
+                    for bbox in bboxes[1:]:
+                        inline_num_rect.include_rect(bbox)
+            
+            for match in re.finditer(r'(אשרי\s*){2,}', combined_text):
+                for idx in range(match.start(), match.end()):
+                    ignore_indices.add(idx)
+                    
+            for idx, char_obj in enumerate(combined_chars):
+                char_obj["is_biblical"] = (idx not in ignore_indices)
+            
+            cleaned_physical = re.sub(r'^\d+\s*', '', raw_cleaned).strip()
+            cleaned_biblical = re.sub(r'(אשרי\s*){2,}', ' ', cleaned_physical)
+            cleaned_biblical = re.sub(r'\s+', ' ', cleaned_biblical).strip()
+            
+            if not cleaned_physical or cleaned_physical.isdigit():
+                continue
+                
+            # Skip if there's no actual biblical text left on the line after stripping filler
+            if len(cleaned_biblical) == 0:
+                continue
+                
+            if len(cleaned_physical.split()) < 2:
+                continue
+                
+            valid_blocks.append({
+                "physical_text": cleaned_physical,
+                "biblical_text": cleaned_biblical,
+                "chars": combined_chars,
+                "bbox": c_line["bbox"],
+                "inline_num_rect": inline_num_rect,
+                "inline_num_str": inline_num_str
+            })
         
         valid_blocks.sort(key=lambda b: b["bbox"][1])
         biblical_lines = valid_blocks
@@ -410,7 +460,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                         color=(0.8, 0.1, 0.1), 
                         width=1
                     )
-                    break # Found leftmost, exit char loop
+                    break 
                     
     # Save the output directly to the stream buffer
     doc.save(output_buffer, garbage=4, deflate=True)
