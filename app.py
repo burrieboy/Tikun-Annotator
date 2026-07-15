@@ -427,9 +427,16 @@ if uploaded_file is not None:
             generate_annotated_tikun_streamlit(uploaded_file, output_buffer)
             
             st.success("Success!")
-            st.download_button(
-                label="Download Annotated PDF",
-                data=output_buffer.getvalue(),
-                file_name="annotated_tikun.pdf",
-                mime="application/pdf"
-            )
+            # ... your code that processes the PDF ends here ...
+
+        # THIS IS THE PART TO ADD/FIX:
+        # Move the "cursor" back to the start of the file
+        output_buffer.seek(0) 
+
+        # Now create the button
+        st.download_button(
+            label="Download Annotated PDF",
+            data=output_buffer,
+            file_name="annotated_tikun.pdf",
+            mime="application/pdf"
+        )
