@@ -421,13 +421,13 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if not cleaned_physical or cleaned_physical.isdigit():
                 continue
 
-            # ==========================================
-            # DIAGNOSTIC: Check character widths of Hashem
+           # ==========================================
+            # DIAGNOSTIC 2.0: Match character to width
             # ==========================================
             if "יהוה" in cleaned_physical:
                 yhwh_chars = [c for c in biblical_chars if c["c"] in ['י', 'ה', 'ו']]
-                widths = [round(c["bbox"][2] - c["bbox"][0], 2) for c in yhwh_chars]
-                st.write(f"📊 **Hashem Character Widths:** {widths} (Normal letters should be around 4.0 - 7.0)")
+                char_width_pairs = [(c["c"], round(c["bbox"][2] - c["bbox"][0], 2)) for c in yhwh_chars]
+                st.write(f"📊 **Letter Widths:** {char_width_pairs}")
             # ==========================================
             
             if len(cleaned_biblical) == 0:
