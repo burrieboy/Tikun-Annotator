@@ -543,27 +543,33 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         if redactions_to_apply:
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
-    for i, block in enumerate(biblical_lines):
-        # --- START OVERRIDE ---
-        raw_text = block["biblical_text"].replace(" ", "")
-    
-        if "אשריאשריאשרי" in raw_text:
-            # Force the character count to be very high for this specific line
-            block["effective_char_count"] = 48.0
-            print(f"DEBUG: FORCED Ashrei line: {block['biblical_text']}")
-        # --- END OVERRIDE ---
-    
-        # --- CALCULATE SCORE ---
-        score_val = FIXED_AVG - block["effective_char_count"]
-        score_val_rounded = round(score_val)
-        
-        # Add a visual "!" to the score in the PDF to prove this code is running
-        if score_val_rounded > 0:
-            score_str = f"ח{int_to_hebrew(score_val_rounded)}!" 
-        elif score_val_rounded < 0:
-            score_str = f"י{int_to_hebrew(abs(score_val_rounded))}!"
-        else:
-            score_str = "שת!"
+   # =========================================================================
+        # SANITY CHECK: FIXED_AVG
+        # =========================================================================
+        FIXED_AVG = 50.0 
+
+        for i, block in enumerate(biblical_lines):
+            # --- START OVERRIDE ---
+            raw_text = block["biblical_text"].replace(" ", "")
+            
+            if "אשריאשריאשרי" in raw_text:
+                # Force the character count to be very high for this specific line
+                block["effective_char_count"] = 48.0
+                print(f"DEBUG: FORCED Ashrei line: {block['biblical_text']}")
+            # --- END OVERRIDE ---
+
+            # --- CALCULATE SCORE ---
+            score_val = FIXED_AVG - block["effective_char_count"]
+            score_val_rounded = round(score_val)
+            
+            # Add a visual "!" to the score in the PDF to prove this code is running
+            if score_val_rounded > 0:
+                score_str = f"ח{int_to_hebrew(score_val_rounded)}!" 
+            elif score_val_rounded < 0:
+                score_str = f"י{int_to_hebrew(abs(score_val_rounded))}!"
+            else:
+                score_str = "שת!"
+            # -----------------------
     # -----------------------    
                 
             catch_word = prev_first_word
