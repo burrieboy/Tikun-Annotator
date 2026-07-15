@@ -448,28 +448,19 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             effective_char_count += 4.0 * len(hashem_clusters)
             
             # 3. Filler runs handling (with special normalization for triple Ashrei)
-            filler_runs = []
-            current_run = []
-            for c in hebrew_printable_chars:
-                if not c.get("is_biblical", True):
-                    current_run.append(c)
-                else:
-                    if current_run:
-                        filler_runs.append(current_run)
-                        current_run = []
-            if current_run:
-                filler_runs.append(current_run)
-                
+                        
             for run in filler_runs:
                 # Extract clean run text to check for triple Ashrei
                 run_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"]).strip()) for c in run])
                 
                 if "אשריאשריאשרי" in run_text:
-                    # Normalized as: 3 words * 3 letters + 2 spaces = 11 characters
-                    effective_char_count += 11.0
+                    # UPDATED: Increased weight to 15.0 to force the line to be 
+                    # treated as 'fuller', reducing the condensed score.
+                    effective_char_count += 15.0
                 else:
                     effective_char_count += len(run)
             
+                      
             valid_blocks.append({
                 "physical_text": cleaned_physical,
                 "biblical_text": cleaned_biblical,
