@@ -543,7 +543,7 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         if redactions_to_apply:
             page.apply_redactions(images=fitz.PDF_REDACT_IMAGE_NONE)
             
-        for i, block in enumerate(biblical_lines):
+    for i, block in enumerate(biblical_lines):
     # --- START OVERRIDE ---
     raw_text = block["biblical_text"].replace(" ", "")
     
