@@ -633,38 +633,43 @@ def main():
 
     st.title("📜 Hebrew Tikun PDF Annotator")
     
-    # =====================================================================
-    # ADJUSTMENT PANEL (SIDEBAR)
+   # =====================================================================
+    # ADJUSTMENT PANEL (SIDEBAR) - CORRECTED
     # =====================================================================
     with st.sidebar:
         st.header("⚙️ Adjustments")
         st.write("---")
         
+        # Initialize session state keys for widgets if not present
+        if 'slide_score' not in st.session_state:
+            st.session_state.slide_score = 0
+        if 'slide_arrow' not in st.session_state:
+            st.session_state.slide_arrow = 0
+
         st.subheader("Line Annotations (X-axis)")
-        st.session_state.input_score_x = st.slider(
-            "Shift position", -50, 50, st.session_state.input_score_x, key="slide_score"
-        )
+        st.slider("Shift position", -50, 50, key="slide_score")
         
         st.write("---")
         
         st.subheader("Red Arrows (Y-axis)")
-        st.session_state.input_arrow_y = st.slider(
-            "Shift position", -20, 20, st.session_state.input_arrow_y, key="slide_arrow"
-        )
+        st.slider("Shift position", -20, 20, key="slide_arrow")
         
         st.write("---")
         col1, col2 = st.columns(2)
         
         if col1.button("Reset"):
+            # Update processing variables
             st.session_state.adj_score_x = 0
             st.session_state.adj_arrow_y = 0
-            st.session_state.input_score_x = 0
-            st.session_state.input_arrow_y = 0
+            # Update slider widget values directly via their keys
+            st.session_state.slide_score = 0
+            st.session_state.slide_arrow = 0
             st.rerun()
             
         if col2.button("Apply"):
-            st.session_state.adj_score_x = st.session_state.input_score_x
-            st.session_state.adj_arrow_y = st.session_state.input_arrow_y
+            # Update processing variables from slider values
+            st.session_state.adj_score_x = st.session_state.slide_score
+            st.session_state.adj_arrow_y = st.session_state.slide_arrow
             st.rerun()
 
     st.write(
