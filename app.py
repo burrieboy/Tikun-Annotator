@@ -12,9 +12,9 @@ font_file = os.path.abspath("Alef-Regular.ttf")
 
 def is_valid_ttf(filepath):
     if not os.path.exists(filepath):
-       return False
+      return False
     if os.path.getsize(filepath) < 50000:
-       return False
+      return False
     try:
         with open(filepath, 'rb') as f:
             sig = f.read(4)
