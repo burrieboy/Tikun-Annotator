@@ -11,7 +11,7 @@ import urllib.request
 font_file = os.path.abspath("Alef-Regular.ttf")
 
 def is_valid_ttf(filepath):
-    if not os.path.exists(filepath):
+    if not os.path.exists(filepath):
         return False
     if os.path.getsize(filepath) < 50000:
         return False
