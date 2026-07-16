@@ -620,66 +620,65 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer, score_x_adj
 # =========================================================================
 def main():
     st.set_page_config(page_title="Hebrew Tikun Annotator")
-    
-    # 1. INITIALIZATION: Set default values in session_state if they don't exist
+
+    # 1. INITIALIZATION: Setup persistent states
     if 'adj_score_x' not in st.session_state:
         st.session_state.adj_score_x = 0
     if 'adj_arrow_y' not in st.session_state:
         st.session_state.adj_arrow_y = 0
-    
-    # Track the slider positions separately so they don't jump around
-    if 'temp_score' not in st.session_state:
-        st.session_state.temp_score = 0
-    if 'temp_arrow' not in st.session_state:
-        st.session_state.temp_arrow = 0
 
     st.title("📜 Hebrew Tikun PDF Annotator")
-    
+
     # =====================================================================
     # ADJUSTMENT PANEL (SIDEBAR)
     # =====================================================================
     with st.sidebar:
         st.header("⚙️ Adjustments")
         
-        # Sliders use 'temp' keys. They update the slider UI but NOT the PDF yet.
-        st.session_state.temp_score = st.slider(
-            "Line Annotations (X-axis)", -50, 50, st.session_state.temp_score
+        # We use keys here. The value in the number_input is the "Draft" value.
+        # We initialize them if they don't exist yet.
+        score_input = st.number_input(
+            "Line Annotations (X-axis)", 
+            value=st.session_state.adj_score_x,
+            step=1,
+            key="n_score"
         )
         
-        st.session_state.temp_arrow = st.slider(
-            "Red Arrows (Y-axis)", -20, 20, st.session_state.temp_arrow
+        arrow_input = st.number_input(
+            "Red Arrows (Y-axis)", 
+            value=st.session_state.adj_arrow_y,
+            step=1,
+            key="n_arrow"
         )
         
         col1, col2 = st.columns(2)
         
-        # RESET: Clears everything
+        # RESET: Clears both inputs and applied values
         if col1.button("Reset"):
             st.session_state.adj_score_x = 0
             st.session_state.adj_arrow_y = 0
-            st.session_state.temp_score = 0
-            st.session_state.temp_arrow = 0
             st.rerun()
             
-        # APPLY: Commits slider values to the processing variables
+        # APPLY: Commits the typed numbers to the 'adj' variables
         if col2.button("Apply"):
-            st.session_state.adj_score_x = st.session_state.temp_score
-            st.session_state.adj_arrow_y = st.session_state.temp_arrow
+            st.session_state.adj_score_x = score_input
+            st.session_state.adj_arrow_y = arrow_input
             st.rerun()
 
     # =====================================================================
     # MAIN CONTENT
     # =====================================================================
-    st.write("Upload a Tikun PDF. Adjust sliders, then click **Apply**.")
+    st.write("Type your adjustments, then click **Apply** to process the PDF.")
     
     uploaded_file = st.file_uploader("Choose a Tikun PDF file", type=["pdf"])
 
     if uploaded_file is not None:
-        # Use the stored 'adj' values to process the file
+        # Use a buffer for the output
         output_pdf_buffer = io.BytesIO()
         
-        with st.spinner("Processing..."):
+        with st.spinner(f"Processing with X={st.session_state.adj_score_x}, Y={st.session_state.adj_arrow_y}..."):
             try:
-                # We copy the file because reading it once exhausts the buffer
+                # Re-read the file
                 file_bytes = uploaded_file.getvalue()
                 
                 generate_annotated_tikun_streamlit(
@@ -689,7 +688,7 @@ def main():
                     st.session_state.adj_arrow_y
                 )
                 
-                st.success(f"PDF processed! (Settings: X={st.session_state.adj_score_x}, Y={st.session_state.adj_arrow_y})")
+                st.success("PDF processed successfully!")
                 
                 st.download_button(
                     label="📥 Download Annotated PDF",
