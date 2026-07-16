@@ -437,59 +437,75 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer, gap_from_te
 def main():
     st.set_page_config(page_title="Hebrew Tikun Annotator", layout="wide")
     st.title("📜 Hebrew Tikun PDF Annotator")
-    
-    # Initialize session state for adjustments
-    if 'gap_val' not in st.session_state: st.session_state.gap_val = 8.0
-    if 'arrow_val' not in st.session_state: st.session_state.arrow_val = 10.0
 
+    # 1. Initialize Session States
+    if 'active_gap' not in st.session_state: st.session_state.active_gap = 8.0
+    if 'active_arrow' not in st.session_state: st.session_state.active_arrow = 10.0
+    
+    # These are the "draft" values for the inputs
+    if 'draft_gap' not in st.session_state: st.session_state.draft_gap = 8.0
+    if 'draft_arrow' not in st.session_state: st.session_state.draft_arrow = 10.0
+    
+    # Store the file buffer so we don't lose it on reruns
+    if 'file_bytes' not in st.session_state: st.session_state.file_bytes = None
+    if 'processed_pdf' not in st.session_state: st.session_state.processed_pdf = None
+
+    # 2. Sidebar Controls (Draft Mode)
     with st.sidebar:
         st.header("⚙️ Adjustment Panel")
-        st.info("Adjust positions and click Apply.")
         
-        st.session_state.gap_val = st.number_input(
+        st.number_input(
             "Line Score Gap (X-axis)", 
-            value=st.session_state.gap_val, 
+            key="draft_gap",
             step=1.0
         )
         
-        st.session_state.arrow_val = st.number_input(
+        st.number_input(
             "Red Arrow Shift (Y-axis)", 
-            value=st.session_state.arrow_val, 
+            key="draft_arrow",
             step=0.5
         )
         
         col1, col2 = st.columns(2)
-        if col1.button("Apply"):
-            st.rerun()
-        if col2.button("Reset"):
-            st.session_state.gap_val = 8.0
-            st.session_state.arrow_val = 10.0
-            st.rerun()
-
-    st.write("Upload a Hebrew Tikun PDF. The app will automatically calculate spacing, detect stretchable letters, and apply your adjustments.")
-
-    uploaded_file = st.file_uploader("Choose a Tikun PDF file", type=["pdf"])
-
-    if uploaded_file is not None:
-        output_pdf_buffer = io.BytesIO()
         
-        with st.spinner("Processing..."):
-            try:
-                generate_annotated_tikun_streamlit(
-                    uploaded_file, 
-                    output_pdf_buffer, 
-                    st.session_state.gap_val, 
-                    st.session_state.arrow_val
-                )
-                st.success("Successfully processed!")
-                st.download_button(
-                    label="📥 Download Annotated PDF",
-                    data=output_pdf_buffer.getvalue(),
-                    file_name="annotated_tikun_margins.pdf",
-                    mime="application/pdf"
-                )
-            except Exception as e:
-                st.error(f"Processing failed: {e}")
+        # APPLY BUTTON: Moves draft to active and triggers processing
+        if col1.button("Apply"):
+            st.session_state.active_gap = st.session_state.draft_gap
+            st.session_state.active_arrow = st.session_state.draft_arrow
+            
+            if st.session_state.file_bytes is not None:
+                with st.spinner("Processing PDF with new settings..."):
+                    output_buffer = io.BytesIO()
+                    # Reset the file pointer to the start before processing
+                    st.session_state.file_bytes.seek(0)
+                    
+                    generate_annotated_tikun_streamlit(
+                        st.session_state.file_bytes, 
+                        output_buffer, 
+                        st.session_state.active_gap, 
+                        st.session_state.active_arrow
+                    )
+                    st.session_state.processed_pdf = output_buffer.getvalue()
+        
+        if col2.button("Reset"):
+            st.session_state.draft_gap = 8.0
+            st.session_state.draft_arrow = 10.0
+            st.session_state.active_gap = 8.0
+            st.session_state.active_arrow = 10.0
+            st.rerun()
 
-if __name__ == "__main__":
-    main()
+    # 3. File Uploader
+    uploaded_file = st.file_uploader("Choose a Tikun PDF file", type=["pdf"])
+    if uploaded_file is not None:
+        # Save bytes to session state so we don't need to re-upload
+        st.session_state.file_bytes = io.BytesIO(uploaded_file.getvalue())
+
+    # 4. Show Download if available
+    if st.session_state.processed_pdf is not None:
+        st.success("PDF is ready!")
+        st.download_button(
+            label="📥 Download Annotated PDF",
+            data=st.session_state.processed_pdf,
+            file_name="annotated_tikun.pdf",
+            mime="application/pdf"
+        )
