@@ -620,8 +620,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer, score_x_adj
 # =========================================================================
 def main():
     st.set_page_config(page_title="Hebrew Tikun Annotator")
-
-    # 1. INITIALIZATION: Setup persistent states
+    
+    # Initialize variables in session state to preserve them during re-runs
     if 'adj_score_x' not in st.session_state:
         st.session_state.adj_score_x = 0
     if 'adj_arrow_y' not in st.session_state:
@@ -630,57 +630,58 @@ def main():
     st.title("📜 Hebrew Tikun PDF Annotator")
 
     # =====================================================================
-    # ADJUSTMENT PANEL (SIDEBAR)
+    # SIDEBAR: ADJUSTMENTS
     # =====================================================================
     with st.sidebar:
         st.header("⚙️ Adjustments")
         
-        # We use keys here. The value in the number_input is the "Draft" value.
-        # We initialize them if they don't exist yet.
-        score_input = st.number_input(
+        # Keys here ensure the numbers stay typed even when the page re-runs
+        score_val = st.number_input(
             "Line Annotations (X-axis)", 
-            value=st.session_state.adj_score_x,
-            step=1,
+            value=st.session_state.adj_score_x, 
+            step=1, 
             key="n_score"
         )
         
-        arrow_input = st.number_input(
+        arrow_val = st.number_input(
             "Red Arrows (Y-axis)", 
-            value=st.session_state.adj_arrow_y,
-            step=1,
+            value=st.session_state.adj_arrow_y, 
+            step=1, 
             key="n_arrow"
         )
         
         col1, col2 = st.columns(2)
         
-        # RESET: Clears both inputs and applied values
         if col1.button("Reset"):
+            # Reset the persistent variables
             st.session_state.adj_score_x = 0
             st.session_state.adj_arrow_y = 0
+            # Force a re-run to update the inputs
             st.rerun()
             
-        # APPLY: Commits the typed numbers to the 'adj' variables
         if col2.button("Apply"):
-            st.session_state.adj_score_x = score_input
-            st.session_state.adj_arrow_y = arrow_input
+            # Update the persistent variables with the currently typed numbers
+            st.session_state.adj_score_x = score_val
+            st.session_state.adj_arrow_y = arrow_val
+            # Re-run the app to trigger the processing with new settings
             st.rerun()
 
     # =====================================================================
     # MAIN CONTENT
     # =====================================================================
-    st.write("Type your adjustments, then click **Apply** to process the PDF.")
-    
+    st.write(f"Current Settings: X={st.session_state.adj_score_x}, Y={st.session_state.adj_arrow_y}")
     uploaded_file = st.file_uploader("Choose a Tikun PDF file", type=["pdf"])
 
     if uploaded_file is not None:
-        # Use a buffer for the output
+        # Buffer to hold the processed result
         output_pdf_buffer = io.BytesIO()
         
-        with st.spinner(f"Processing with X={st.session_state.adj_score_x}, Y={st.session_state.adj_arrow_y}..."):
+        with st.spinner("Processing PDF..."):
             try:
-                # Re-read the file
+                # We work on a copy of the file to ensure the uploader persists
                 file_bytes = uploaded_file.getvalue()
                 
+                # Run the processing function
                 generate_annotated_tikun_streamlit(
                     io.BytesIO(file_bytes), 
                     output_pdf_buffer, 
@@ -688,8 +689,9 @@ def main():
                     st.session_state.adj_arrow_y
                 )
                 
-                st.success("PDF processed successfully!")
+                st.success("Successfully annotated!")
                 
+                # Show the download button immediately
                 st.download_button(
                     label="📥 Download Annotated PDF",
                     data=output_pdf_buffer.getvalue(),
@@ -697,7 +699,7 @@ def main():
                     mime="application/pdf"
                 )
             except Exception as e:
-                st.error(f"Processing failed: {e}")
+                st.error(f"Processing error: {e}")
 
 if __name__ == "__main__":
     main()
