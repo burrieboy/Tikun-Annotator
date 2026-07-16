@@ -1,7 +1,3 @@
-Take the following code and add an "adjustment panel" to the streamlit interface where users can easily adjust how close or far the line score column from the body text (it's x axis) using side arrow buttons, and how close the red arrows are from the text (y axis) also using side arrow buttons. add an apply button at the bottom to apply the changes, and a reset button to set everything back to 0.
-the attached photo displays what i am describing.
-Here is the code i want you to work with. Take this code, make the update and spit back the fully revised code that i can use to replace the entire code in github as is:
-
 import streamlit as st
 import fitz
 import io
