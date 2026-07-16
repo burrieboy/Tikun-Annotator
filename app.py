@@ -621,81 +621,80 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer, score_x_adj
 def main():
     st.set_page_config(page_title="Hebrew Tikun Annotator")
     
-    # Initialize session state for adjustments
+    # 1. INITIALIZATION: Set default values in session_state if they don't exist
     if 'adj_score_x' not in st.session_state:
         st.session_state.adj_score_x = 0
     if 'adj_arrow_y' not in st.session_state:
         st.session_state.adj_arrow_y = 0
-    if 'input_score_x' not in st.session_state:
-        st.session_state.input_score_x = 0
-    if 'input_arrow_y' not in st.session_state:
-        st.session_state.input_arrow_y = 0
+    
+    # Track the slider positions separately so they don't jump around
+    if 'temp_score' not in st.session_state:
+        st.session_state.temp_score = 0
+    if 'temp_arrow' not in st.session_state:
+        st.session_state.temp_arrow = 0
 
     st.title("📜 Hebrew Tikun PDF Annotator")
     
-   # =====================================================================
-    # ADJUSTMENT PANEL (SIDEBAR) - CORRECTED
+    # =====================================================================
+    # ADJUSTMENT PANEL (SIDEBAR)
     # =====================================================================
     with st.sidebar:
         st.header("⚙️ Adjustments")
-        st.write("---")
         
-        # Initialize session state keys for widgets if not present
-        if 'slide_score' not in st.session_state:
-            st.session_state.slide_score = 0
-        if 'slide_arrow' not in st.session_state:
-            st.session_state.slide_arrow = 0
-
-        st.subheader("Line Annotations (X-axis)")
-        st.slider("Shift position", -50, 50, key="slide_score")
+        # Sliders use 'temp' keys. They update the slider UI but NOT the PDF yet.
+        st.session_state.temp_score = st.slider(
+            "Line Annotations (X-axis)", -50, 50, st.session_state.temp_score
+        )
         
-        st.write("---")
+        st.session_state.temp_arrow = st.slider(
+            "Red Arrows (Y-axis)", -20, 20, st.session_state.temp_arrow
+        )
         
-        st.subheader("Red Arrows (Y-axis)")
-        st.slider("Shift position", -20, 20, key="slide_arrow")
-        
-        st.write("---")
         col1, col2 = st.columns(2)
         
+        # RESET: Clears everything
         if col1.button("Reset"):
-            # Update processing variables
             st.session_state.adj_score_x = 0
             st.session_state.adj_arrow_y = 0
-            # Update slider widget values directly via their keys
-            st.session_state.slide_score = 0
-            st.session_state.slide_arrow = 0
+            st.session_state.temp_score = 0
+            st.session_state.temp_arrow = 0
             st.rerun()
             
+        # APPLY: Commits slider values to the processing variables
         if col2.button("Apply"):
-            # Update processing variables from slider values
-            st.session_state.adj_score_x = st.session_state.slide_score
-            st.session_state.adj_arrow_y = st.session_state.slide_arrow
+            st.session_state.adj_score_x = st.session_state.temp_score
+            st.session_state.adj_arrow_y = st.session_state.temp_arrow
             st.rerun()
 
-    st.write(
-        "Upload a Hebrew Tikun PDF. Use the sidebar to adjust layout spacing "
-        "and click **Apply** to re-process."
-    )
-
-    uploaded_file = st.file_uploader("Choose a Tikun PDF file to process", type=["pdf"])
+    # =====================================================================
+    # MAIN CONTENT
+    # =====================================================================
+    st.write("Upload a Tikun PDF. Adjust sliders, then click **Apply**.")
+    
+    uploaded_file = st.file_uploader("Choose a Tikun PDF file", type=["pdf"])
 
     if uploaded_file is not None:
+        # Use the stored 'adj' values to process the file
         output_pdf_buffer = io.BytesIO()
         
-        with st.spinner("Analyzing text layout and inserting custom Hebrew annotations..."):
+        with st.spinner("Processing..."):
             try:
+                # We copy the file because reading it once exhausts the buffer
+                file_bytes = uploaded_file.getvalue()
+                
                 generate_annotated_tikun_streamlit(
-                    uploaded_file, 
+                    io.BytesIO(file_bytes), 
                     output_pdf_buffer, 
                     st.session_state.adj_score_x, 
                     st.session_state.adj_arrow_y
                 )
-                st.success("Successfully processed and annotated PDF layout!")
+                
+                st.success(f"PDF processed! (Settings: X={st.session_state.adj_score_x}, Y={st.session_state.adj_arrow_y})")
                 
                 st.download_button(
                     label="📥 Download Annotated PDF",
                     data=output_pdf_buffer.getvalue(),
-                    file_name="annotated_tikun_margins.pdf",
+                    file_name="annotated_tikun.pdf",
                     mime="application/pdf"
                 )
             except Exception as e:
