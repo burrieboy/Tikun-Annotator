@@ -620,8 +620,8 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer, score_x_adj
 # =========================================================================
 def main():
     st.set_page_config(page_title="Hebrew Tikun Annotator")
-    
-    # Initialize variables in session state to preserve them during re-runs
+
+    # 1. INITIALIZATION: Setup session state for persistent variables
     if 'adj_score_x' not in st.session_state:
         st.session_state.adj_score_x = 0
     if 'adj_arrow_y' not in st.session_state:
@@ -629,59 +629,42 @@ def main():
 
     st.title("📜 Hebrew Tikun PDF Annotator")
 
-    # =====================================================================
-    # SIDEBAR: ADJUSTMENTS
-    # =====================================================================
+    # 2. SIDEBAR: Create a Form
+    # Using a form ensures all inputs update at once only when "Apply" is clicked
     with st.sidebar:
         st.header("⚙️ Adjustments")
         
-        # Keys here ensure the numbers stay typed even when the page re-runs
-        score_val = st.number_input(
-            "Line Annotations (X-axis)", 
-            value=st.session_state.adj_score_x, 
-            step=1, 
-            key="n_score"
-        )
-        
-        arrow_val = st.number_input(
-            "Red Arrows (Y-axis)", 
-            value=st.session_state.adj_arrow_y, 
-            step=1, 
-            key="n_arrow"
-        )
-        
-        col1, col2 = st.columns(2)
-        
-        if col1.button("Reset"):
-            # Reset the persistent variables
+        with st.form("adjustment_form"):
+            # We use local variables inside the form
+            new_score = st.number_input("Line Annotations (X-axis)", value=st.session_state.adj_score_x, step=1)
+            new_arrow = st.number_input("Red Arrows (Y-axis)", value=st.session_state.adj_arrow_y, step=1)
+            
+            # The submit button triggers the form and refreshes the script
+            submitted = st.form_submit_button("Apply")
+            
+            if submitted:
+                # Update session state immediately when clicked
+                st.session_state.adj_score_x = new_score
+                st.session_state.adj_arrow_y = new_arrow
+
+        if st.button("Reset"):
             st.session_state.adj_score_x = 0
             st.session_state.adj_arrow_y = 0
-            # Force a re-run to update the inputs
-            st.rerun()
-            
-        if col2.button("Apply"):
-            # Update the persistent variables with the currently typed numbers
-            st.session_state.adj_score_x = score_val
-            st.session_state.adj_arrow_y = arrow_val
-            # Re-run the app to trigger the processing with new settings
             st.rerun()
 
-    # =====================================================================
-    # MAIN CONTENT
-    # =====================================================================
+    # 3. MAIN CONTENT: PDF Processing
+    # This runs AFTER the sidebar/form logic, so it always sees the updated values
     st.write(f"Current Settings: X={st.session_state.adj_score_x}, Y={st.session_state.adj_arrow_y}")
     uploaded_file = st.file_uploader("Choose a Tikun PDF file", type=["pdf"])
 
     if uploaded_file is not None:
-        # Buffer to hold the processed result
         output_pdf_buffer = io.BytesIO()
         
+        # We process here because the script has already passed the form logic above
         with st.spinner("Processing PDF..."):
             try:
-                # We work on a copy of the file to ensure the uploader persists
                 file_bytes = uploaded_file.getvalue()
                 
-                # Run the processing function
                 generate_annotated_tikun_streamlit(
                     io.BytesIO(file_bytes), 
                     output_pdf_buffer, 
@@ -690,8 +673,6 @@ def main():
                 )
                 
                 st.success("Successfully annotated!")
-                
-                # Show the download button immediately
                 st.download_button(
                     label="📥 Download Annotated PDF",
                     data=output_pdf_buffer.getvalue(),
