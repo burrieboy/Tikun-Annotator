@@ -80,7 +80,7 @@ NUMBER_COLOR        = (0, 0, 0)
 stretchable_letters = {'ד', 'ר', 'ק', 'ת', 'ל', 'ה'}
 
 # =========================================================================
-# UTILITY FUNCTIONS (Gematria, Vowel Stripper, RTL Fix)
+# UTILITY FUNCTIONS
 # =========================================================================
 def strip_nikud(text):
     """Removes all Hebrew vowels (nikud) and cantillation marks (taamim)."""
@@ -111,11 +111,6 @@ def fix_rtl(text):
     return text[::-1]
 
 def flag_fillers_in_line_chars(chars):
-    """
-    Analyzes a list of character dicts for a line, finds contiguous runs of 
-    characters consisting entirely of the filler letters {א, ש, ר, י},
-    and flags them as non-biblical (is_biblical = False) if they meet the filler criteria.
-    """
     filler_letters = {'א', 'ש', 'ר', 'י'}
     n = len(chars)
     i = 0
@@ -154,7 +149,7 @@ def flag_fillers_in_line_chars(chars):
 # =========================================================================
 # THE MAIN PROCESSING FUNCTION
 # =========================================================================
-def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
+def generate_annotated_tikun_streamlit(uploaded_file, output_buffer, score_x_adj, arrow_y_adj):
     doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
     total_pages = len(doc)
     
@@ -195,7 +190,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
         top_limit    = page_height * TOP_CROP_PERCENT   
         bottom_limit = page_height * (1.0 - BOTTOM_CROP_PERCENT)   
 
-        # Dynamic header boundary detection
         header_y_boundary = None
         for block in page_data.get("blocks", []):
             if "lines" in block:
@@ -235,7 +229,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                                     "center_y": (s_y0 + s_y1) / 2
                                 })
         
-        # Detect and consolidate lines
         raw_lines = []
         for block in page_data.get("blocks", []):
             if "lines" in block:
@@ -322,7 +315,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             
             biblical_chars = [c for c in printable_chars if c.get("is_biblical", True)]
             
-            # Word Clustering for BIBLICAL words
             biblical_word_clusters = []
             current_cluster = []
             for char_obj in biblical_chars:
@@ -349,7 +341,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if word_text.strip():
                     biblical_words.append(word_text)
                     
-            # Word Clustering for PHYSICAL words
             physical_word_clusters = []
             current_cluster = []
             for char_obj in printable_chars:
@@ -424,13 +415,9 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 if not any('\u0590' <= char <= '\u05fe' for char in char_obj["c"]):
                     char_obj["is_biblical"] = False
             
-            # =========================================================================
-            # LITERAL-CHARACTER-COUNT-BASED DENSITY CALCULATION (FIXED)
-            # =========================================================================
             hebrew_printable_chars = [c for c in combined_chars if any('\u0590' <= char <= '\u05fe' for char in c["c"])]
             hebrew_biblical_chars = [c for c in hebrew_printable_chars if c.get("is_biblical", True)]
             
-            # Detect instances of Hashem
             hashem_clusters = []
             for cluster in biblical_word_clusters:
                 word_text = "".join([c["c"] for c in sorted(cluster, key=lambda c: c["bbox"][0], reverse=True)])
@@ -444,7 +431,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             effective_char_count = len(non_hashem_biblical_chars)
             effective_char_count += 4.0 * len(hashem_clusters)
             
-            # Triple Ashrei Override logic
             full_line_raw_text = "".join([re.sub(r'[^\u05d0-\u05ea]', '', strip_nikud(c["c"])) for c in hebrew_printable_chars])
             
             filler_runs = []
@@ -459,7 +445,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             if current_run:
                 filler_runs.append(current_run)
             
-            # Detect triple ashrei specifically for the override
             has_triple_ashrei = "אשריאשריאשרי" in full_line_raw_text
             
             if has_triple_ashrei:
@@ -509,15 +494,11 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             block["matched_num_str"] = num_str
             block["matched_num_rect"] = num_rect
             
-        # =========================================================================
-        # STRAIGHT MARGIN GENERATION
-        # =========================================================================
         max_x1 = max(b["bbox"][2] for b in biblical_lines)
         
-        SCORE_COL_X     = max_x1 + SAFETY_GAP_FROM_TEXT
+        SCORE_COL_X     = max_x1 + SAFETY_GAP_FROM_TEXT + score_x_adj
         LINE_NUM_COL_X  = SCORE_COL_X + SCORE_TO_NUM_GAP
         CATCHWORD_COL_X = LINE_NUM_COL_X + NUM_TO_CATCH_GAP
-        # =========================================================================
 
         avg_chars = round(sum(b["effective_char_count"] for b in biblical_lines) / len(biblical_lines))
         prev_first_word = "—"
@@ -563,7 +544,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
             else:
                 prev_first_word = "—"
             
-            # Print Score
             page.insert_text(
                 fitz.Point(SCORE_X, baseline_y), 
                 fix_rtl(score_str), 
@@ -574,7 +554,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 overlay=True
             )
             
-            # Print Catch-word
             page.insert_text(
                 fitz.Point(CATCHWORD_X, baseline_y), 
                 fix_rtl(catch_word), 
@@ -585,7 +564,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 overlay=True
             )
             
-            # Print Shrunk Line Number
             if block["matched_num_str"]:
                 page.insert_text(
                     fitz.Point(LINE_NUMBER_X, baseline_y), 
@@ -597,9 +575,6 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                     overlay=True
                 )
             
-            # =========================================================================
-            # TARGETING ONLY THE LEFTMOST (READING-ORDER LAST) STRETCHABLE LETTER
-            # =========================================================================
             biblical_chars = [c for c in chars if c.get("is_biblical", True) and c["c"].strip()]
             biblical_chars_sorted = sorted(biblical_chars, key=lambda c: c["bbox"][0])
             
@@ -613,25 +588,22 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
                 cx0, cy0, cx1, cy1 = target_char["bbox"]
                 char_center_x = (cx0 + cx1) / 2
                 
-                ARROW_DOWNWARD_SHIFT = 10.0 
+                ARROW_DOWNWARD_SHIFT = 10.0 + arrow_y_adj
                 arrow_tip_y = cy0 + ARROW_DOWNWARD_SHIFT
                 arrow_top_y = arrow_tip_y - 4.5
                 
-                # Vertical Line of the Arrow
                 page.draw_line(
                     fitz.Point(char_center_x, arrow_top_y), 
                     fitz.Point(char_center_x, arrow_tip_y), 
                     color=(0.8, 0.1, 0.1), 
                     width=1
                 )
-                # Left wing of arrow head
                 page.draw_line(
                     fitz.Point(char_center_x - 1.2, arrow_tip_y - 1.5), 
                     fitz.Point(char_center_x, arrow_tip_y),
                     color=(0.8, 0.1, 0.1), 
                     width=1
                 )
-                # Right wing of arrow head
                 page.draw_line(
                     fitz.Point(char_center_x + 1.2, arrow_tip_y - 1.5), 
                     fitz.Point(char_center_x, arrow_tip_y),
@@ -648,11 +620,56 @@ def generate_annotated_tikun_streamlit(uploaded_file, output_buffer):
 # =========================================================================
 def main():
     st.set_page_config(page_title="Hebrew Tikun Annotator")
+    
+    # Initialize session state for adjustments
+    if 'adj_score_x' not in st.session_state:
+        st.session_state.adj_score_x = 0
+    if 'adj_arrow_y' not in st.session_state:
+        st.session_state.adj_arrow_y = 0
+    if 'input_score_x' not in st.session_state:
+        st.session_state.input_score_x = 0
+    if 'input_arrow_y' not in st.session_state:
+        st.session_state.input_arrow_y = 0
+
     st.title("📜 Hebrew Tikun PDF Annotator")
+    
+    # =====================================================================
+    # ADJUSTMENT PANEL (SIDEBAR)
+    # =====================================================================
+    with st.sidebar:
+        st.header("⚙️ Adjustments")
+        st.write("---")
+        
+        st.subheader("Line Annotations (X-axis)")
+        st.session_state.input_score_x = st.slider(
+            "Shift position", -50, 50, st.session_state.input_score_x, key="slide_score"
+        )
+        
+        st.write("---")
+        
+        st.subheader("Red Arrows (Y-axis)")
+        st.session_state.input_arrow_y = st.slider(
+            "Shift position", -20, 20, st.session_state.input_arrow_y, key="slide_arrow"
+        )
+        
+        st.write("---")
+        col1, col2 = st.columns(2)
+        
+        if col1.button("Reset"):
+            st.session_state.adj_score_x = 0
+            st.session_state.adj_arrow_y = 0
+            st.session_state.input_score_x = 0
+            st.session_state.input_arrow_y = 0
+            st.rerun()
+            
+        if col2.button("Apply"):
+            st.session_state.adj_score_x = st.session_state.input_score_x
+            st.session_state.adj_arrow_y = st.session_state.input_arrow_y
+            st.rerun()
+
     st.write(
-        "Upload a Hebrew Tikun PDF. The app will automatically calculate spacing densities, "
-        "detect stretchable letters (adding target red arrows), align straight margin metrics, "
-        "and overlay customized helper headers/catchwords."
+        "Upload a Hebrew Tikun PDF. Use the sidebar to adjust layout spacing "
+        "and click **Apply** to re-process."
     )
 
     uploaded_file = st.file_uploader("Choose a Tikun PDF file to process", type=["pdf"])
@@ -662,7 +679,12 @@ def main():
         
         with st.spinner("Analyzing text layout and inserting custom Hebrew annotations..."):
             try:
-                generate_annotated_tikun_streamlit(uploaded_file, output_pdf_buffer)
+                generate_annotated_tikun_streamlit(
+                    uploaded_file, 
+                    output_pdf_buffer, 
+                    st.session_state.adj_score_x, 
+                    st.session_state.adj_arrow_y
+                )
                 st.success("Successfully processed and annotated PDF layout!")
                 
                 st.download_button(
